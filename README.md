@@ -1,10 +1,10 @@
 # Extract-Banco-central
 
 Pipeline Python para copiar Magento e Ativo (MySQL) para o PostgreSQL existente
-**Atendimento**, schema **raw**. Implementação atual: **Fases 1 e 2 — infraestrutura e sales_order**.
+**Atendimento**, schema **raw**. Implementação atual: **Fases 1 a 3 — infraestrutura, pedidos e itens Magento**.
 
 Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
-`raw.magento_sales_order`. A inicialização é transacional e pode ser repetida.
+`raw.magento_sales_order` e `raw.magento_sales_order_item`. A inicialização é transacional e pode ser repetida.
 Não cria databases. A configuração recusa qualquer destino diferente de
 `Atendimento`. Tabelas existentes não são apagadas ou recriadas; `IF NOT EXISTS`
 não migra estruturas preexistentes incompatíveis.
@@ -33,6 +33,8 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main inspect --source ativo --table sa_pedido
 .venv\Scripts\python -m src.main full --source magento --entity sales_order --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source magento --entity sales_order
+.venv\Scripts\python -m src.main full --source magento --entity sales_order_item --batch-size 10000
+.venv\Scripts\python -m src.main incremental --source magento --entity sales_order_item
 .venv\Scripts\python -m pytest -q
 ```
 
@@ -41,6 +43,9 @@ aplica os dois primeiros arquivos de `sql/postgres` em uma transação. Exceçõ
 rollback. `inspect` consulta colunas e índices reais no `information_schema`,
 sem ler registros pessoais. Use-o antes de definir as tabelas RAW de negócio.
 Também é possível passar `--env-file CAMINHO` antes do subcomando.
+Sem `--entity`, FULL/incremental executam as duas entidades Magento em sequência,
+cada uma com seu próprio UUID, lock, transação e watermark. Uma falha interrompe
+a sequência; uma entidade já confirmada não é revertida pela falha da seguinte.
 
 MySQL usa TLS com validação do certificado e uma transação `READ ONLY`, encerrada
 com rollback. A API disponibilizada limita-se a consultas. Recomenda-se conceder
@@ -103,7 +108,7 @@ $env:RUN_INTEGRATION = '1'
 Remove-Item Env:RUN_INTEGRATION
 ```
 
-## Próximas fases previstas
+## Validação da Fase 2
 
 Validação realizada em 2026-09-28: FULL com 1.654.948 linhas em origem e destino
 na mesma visão de extração, concluído em 337,94 segundos. Dois incrementais
@@ -114,12 +119,47 @@ As três execuções terminaram em SUCCESS; watermark final dessa validação:
 integração aprovados. Esses números são um registro da validação, não contagens
 atuais de uma origem que continua recebendo dados.
 
-3. `sales_order_item`: FULL/incremental, preservando itens pai e filhos.
+## sales_order_item — implementado
+
+Os 24 campos solicitados existem na origem, incluindo `ozone_customers` como TEXT.
+`item_id` é a PK e inclui o valor zero, que também deve ser carregado.
+Os índices e tipos foram inspecionados em 2026-09-28: IDs INT UNSIGNED usam BIGINT;
+preços e quantidades usam NUMERIC(12,4), totais/descontos/impostos usam NUMERIC(20,4).
+O carregador compartilhado com pedidos recebe explicitamente as colunas, a PK e
+o destino de cada entidade. Nenhum GROUP BY, DISTINCT, filtro por tipo de produto
+ou junção agrega/remove itens; pai e filhos são linhas independentes.
+
+**Limitação de performance da origem:** não há índice em `updated_at` dos itens.
+O incremental filtra `updated_at >= watermark - 5 minutos`, mas pagina por
+`item_id`, percorrendo a PK com `FORCE INDEX (PRIMARY)`. Isso captura alterações
+em IDs antigos sem depender de o pedido pai ter sido atualizado. O watermark é
+o maior timestamp encontrado, mesmo que não pertença à última PK processada.
+Limite superior da PK e REPEATABLE READ mantêm uma visão consistente da carga.
+Não há segunda varredura para MAX(updated_at), nem ordenação global por data.
+Ainda assim, o incremental precisa percorrer a tabela: planeje sua frequência
+considerando esse custo. Nenhum índice/configuração é alterado na origem.
+
+Os mesmos controles de atomicidade, logs sem payload, UPSERT, isolamento,
+contagem FULL e tratamento de falhas dos pedidos se aplicam aos itens.
+Os testes de integração usam texto sintético com caracteres especiais e
+validam pai/filhos, preços, idempotência e rollback em tabelas temporárias.
+
+Validação realizada em 2026-09-28: FULL de 7.021.703 itens, contagens iguais
+na origem e na RAW na mesma visão, concluído em 1.160,11 segundos. Incremental
+posterior processou 722 itens novos ou atualizados. A RAW ficou com 7.021.966
+linhas únicas por PK, incluindo `item_id=0`. Os quatro itens 703415–703418
+coincidiram nos 24 campos da origem; cada um permanece como linha independente.
+As duas execuções terminaram em SUCCESS, com watermark `2026-09-28T11:42:08`
+no fuso da origem. Foram aprovados 36 testes unitários e 4 de integração.
+Os totais registram essa validação; a origem segue recebendo pedidos e itens.
+
+## Próximas fases previstas
+
 4. `sa_pedido`: FULL, incremental por PK e reconciliação por `dt_pedido`.
 5. `sa_pedido_evento`: FULL, incremental por PK e reconciliação por pedidos recentes.
 6. Demais entidades, após inspecionar colunas, PKs e índices reais.
 
-`full`, `incremental` e `--batch-size` estão disponíveis para `magento/sales_order`.
+`full`, `incremental` e `--batch-size` estão disponíveis para pedidos e itens Magento.
 Os comandos `reconcile`, `snapshot` e `--days` pertencem às próximas fases.
 `BATCH_SIZE=10000` e `RECONCILIATION_DAYS=30` já são validados na configuração.
 
@@ -131,6 +171,6 @@ adicionando `_source`, `_extracted_at` em UTC e `_batch_id` UUID.
 
 Os testes atuais cobrem configuração, segredos, proteção do database, conexão
 MySQL somente leitura, parametrização, paginação, janela incremental, concorrência,
-COPY/UPSERT e rollback sem avanço de watermark. Nas próximas fases, verificar
-os itens Magento 703415–703418 e o atributo
-321 do produto 47522. Nenhuma regra de negócio, staging, core ou mart faz parte da RAW.
+COPY/UPSERT e rollback sem avanço de watermark. A validação dos itens usa os IDs
+Magento 703415–703418. Nas próximas fases, verificar também o atributo 321 do
+produto 47522. Nenhuma regra de negócio, staging, core ou mart faz parte da RAW.

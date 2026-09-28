@@ -1,4 +1,4 @@
-"""Uma transação READ ONLY, TLS e interface limitada a SELECT de metadados."""
+"""Uma transação READ ONLY, TLS e consultas delimitadas por entidade."""
 
 from contextlib import contextmanager
 import ssl
@@ -27,6 +27,25 @@ class MySQLReader:
 
     def sales_order_page(self, **kwargs):
         from src.sources.magento.sales_order import page_query
+        query, params = page_query(**kwargs)
+        with self._connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
+    def sales_order_item_bounds(self, count_total=True):
+        with self._connection.cursor() as cursor:
+            cursor.execute("SELECT @@transaction_isolation, @@session.time_zone")
+            isolation, zone = cursor.fetchone()
+            if isolation.upper() != "REPEATABLE-READ" or zone != "America/Buenos_Aires":
+                raise ValueError("Isolamento ou fuso da origem divergente do contrato")
+            aggregate = "COUNT(*)" if count_total else "NULL"
+            # MAX(updated_at) exigiria uma segunda varredura: obter o watermark
+            # das linhas efetivamente extraídas na mesma visão consistente.
+            cursor.execute(f"SELECT {aggregate}, MAX(item_id), NULL FROM sales_order_item")
+            return cursor.fetchone()
+
+    def sales_order_item_page(self, **kwargs):
+        from src.sources.magento.sales_order_item import page_query
         query, params = page_query(**kwargs)
         with self._connection.cursor() as cursor:
             cursor.execute(query, params)

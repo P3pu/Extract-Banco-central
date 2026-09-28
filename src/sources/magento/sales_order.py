@@ -19,6 +19,7 @@ FIELDS = {
     "updated_at": ("timestamp", "TIMESTAMP", False),
 }
 COLUMNS = tuple(FIELDS)
+PK = "entity_id"
 
 
 def validate_schema(columns, indexes):

@@ -55,7 +55,7 @@ def test_chunking_and_watermark_does_not_regress():
     reader.sales_order_page.side_effect = [(row(1, old), row(2, old)), (row(4, old),), ()]
     connection.execute.return_value.fetchone.return_value = (3,)
     progress = {"rows_extracted": 0, "rows_loaded": 0}
-    with patch.object(pipeline.loader, "prepare"), patch.object(pipeline.loader, "upsert", side_effect=lambda c, r, b: len(r)):
+    with patch.object(pipeline.loader, "prepare"), patch.object(pipeline.loader, "upsert", side_effect=lambda c, r, b, *a, **k: len(r)):
         assert pipeline.load(connection, reader, "FULL", 2, UUID(int=1), old, progress) == old
     assert progress == {"rows_extracted": 3, "rows_loaded": 3}
     assert reader.sales_order_page.call_args_list[1].kwargs["cursor"] == 2
@@ -63,7 +63,8 @@ def test_chunking_and_watermark_does_not_regress():
 
 
 @pytest.mark.parametrize("failure", [False, True])
-def test_atomic_success_and_rollback_without_watermark(failure):
+@pytest.mark.parametrize("entity", ["sales_order", "sales_order_item"])
+def test_atomic_success_and_rollback_without_watermark(failure, entity):
     connection, reader = MagicMock(), MagicMock()
     connection.closed = False
     connection.execute.return_value.fetchone.side_effect = [(True,), None]
@@ -78,24 +79,26 @@ def test_atomic_success_and_rollback_without_watermark(failure):
 
     settings = MagicMock(spec=Settings)
     settings.batch_size = 100
-    def perform(*args):
+    def perform(*args, **kwargs):
         args[-1].update(rows_extracted=12, rows_loaded=12)
         if failure:
             raise ValueError("private payload must not be logged")
         return datetime(2026, 9, 28)
 
     with patch.object(pipeline.postgres, "connect", pg), patch.object(pipeline.mysql, "connect", source), \
-         patch.object(pipeline, "validate_schema"), patch.object(pipeline, "load", side_effect=perform):
+         patch.object(pipeline.ENTITIES[entity][0], "validate_schema"), patch.object(pipeline, "load", side_effect=perform):
         if failure:
             with pytest.raises(ValueError):
-                pipeline.run(settings, "FULL")
+                pipeline.run(settings, "FULL", entity=entity)
         else:
-            assert isinstance(pipeline.run(settings, "FULL"), UUID)
+            assert isinstance(pipeline.run(settings, "FULL", entity=entity), UUID)
     queries = [str(call.args[0]) for call in connection.execute.call_args_list]
     assert any("INSERT INTO raw._etl_watermark" in q for q in queries) == (not failure)
     assert any("status='FAILED'" in q for q in queries) == failure
     assert connection.rollback.call_count == int(failure)
     assert connection.commit.call_count == 2
+    start = next(c for c in connection.execute.call_args_list if "INSERT INTO raw._etl_runs" in str(c.args[0]))
+    assert start.args[1][1:4] == (f"raw.magento_{entity}", "magento", entity)
     if failure:
         failed = next(c for c in connection.execute.call_args_list if "status='FAILED'" in str(c.args[0]))
         assert failed.args[1][1] == "ValueError"
