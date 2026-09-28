@@ -85,7 +85,7 @@ def test_run_atomic_watermark_and_failure(failure):
     settings = MagicMock(spec=Settings)
     settings.batch_size, settings.reconciliation_days = 100, 30
 
-    def perform(*args):
+    def perform(*args, **kwargs):
         args[-1].update(rows_extracted=3, rows_loaded=3)
         if failure:
             raise ValueError("private payload")
