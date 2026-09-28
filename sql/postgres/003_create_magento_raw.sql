@@ -1,0 +1,27 @@
+-- Tipos e PK validados na origem em 2026-09-28. Sem índices analíticos.
+CREATE TABLE IF NOT EXISTS raw.magento_sales_order (
+    entity_id BIGINT PRIMARY KEY,
+    increment_id VARCHAR(32),
+    customer_id BIGINT,
+    state VARCHAR(32),
+    status VARCHAR(32),
+    coupon_code VARCHAR(255),
+    applied_rule_ids VARCHAR(128),
+    subtotal NUMERIC(20,4),
+    base_subtotal NUMERIC(20,4),
+    discount_amount NUMERIC(20,4),
+    base_discount_amount NUMERIC(20,4),
+    shipping_amount NUMERIC(20,4),
+    base_shipping_amount NUMERIC(20,4),
+    tax_amount NUMERIC(20,4),
+    base_tax_amount NUMERIC(20,4),
+    grand_total NUMERIC(20,4),
+    base_grand_total NUMERIC(20,4),
+    total_item_count INTEGER NOT NULL,
+    total_qty_ordered NUMERIC(12,4),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    _source TEXT NOT NULL,
+    _extracted_at TIMESTAMPTZ NOT NULL,
+    _batch_id UUID NOT NULL
+);

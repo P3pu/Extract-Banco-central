@@ -1,4 +1,4 @@
-"""CLI da Fase 1. Não executa cargas de negócio."""
+"""CLI RAW: infraestrutura e sales_order (Fases 1 e 2)."""
 
 import argparse
 import json
@@ -26,7 +26,7 @@ def safe_error(exc):
 
 
 def parser():
-    root = argparse.ArgumentParser(description="Pipeline RAW — Fase 1")
+    root = argparse.ArgumentParser(description="Pipeline RAW — Fases 1 e 2")
     root.add_argument("--env-file", type=Path)
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("init", help="Cria raw e tabelas técnicas no Atendimento")
@@ -35,6 +35,11 @@ def parser():
     inspect = commands.add_parser("inspect", help="Consulta somente metadados MySQL")
     inspect.add_argument("--source", choices=["magento", "ativo"], required=True)
     inspect.add_argument("--table", required=True)
+    for mode in ("full", "incremental"):
+        load = commands.add_parser(mode, help="Carga de Magento sales_order")
+        load.add_argument("--source", choices=["magento"], default="magento")
+        load.add_argument("--entity", choices=["sales_order"], default="sales_order")
+        load.add_argument("--batch-size", type=int)
     return root
 
 
@@ -42,7 +47,10 @@ def main(argv=None):
     args = parser().parse_args(argv)
     try:
         settings = Settings.load(**({"env_file": args.env_file} if args.env_file else {}))
-        if args.command == "init":
+        if args.command in {"full", "incremental"}:
+            from src.pipeline.sales_order import run
+            run(settings, args.command.upper(), args.batch_size)
+        elif args.command == "init":
             from src.db.postgres import connect, initialize
             with connect(settings) as connection:
                 initialize(connection)

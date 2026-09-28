@@ -15,6 +15,23 @@ class MySQLReader:
             cursor.execute("SELECT DATABASE()")
             return cursor.fetchone()[0]
 
+    def sales_order_bounds(self, count_total=True):
+        with self._connection.cursor() as cursor:
+            cursor.execute("SELECT @@transaction_isolation, @@session.time_zone")
+            isolation, zone = cursor.fetchone()
+            if isolation.upper() != "REPEATABLE-READ" or zone != "America/Buenos_Aires":
+                raise ValueError("Isolamento ou fuso da origem divergente do contrato")
+            aggregate = "COUNT(*)" if count_total else "NULL"
+            cursor.execute(f"SELECT {aggregate}, MAX(entity_id), MAX(updated_at) FROM sales_order")
+            return cursor.fetchone()
+
+    def sales_order_page(self, **kwargs):
+        from src.sources.magento.sales_order import page_query
+        query, params = page_query(**kwargs)
+        with self._connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
     def columns(self, database, table):
         with self._connection.cursor(pymysql.cursors.DictCursor) as cursor:
             cursor.execute(
