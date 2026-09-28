@@ -20,6 +20,14 @@ ENTITIES = {
                              "008_create_ativo_modalidade_categoria_raw.sql"),
     "pedido_status": (referenciais.pedido_status, 7248319306,
                       "009_create_ativo_pedido_status_raw.sql"),
+    "tamanho_camiseta": (referenciais.tamanho_camiseta, 7248319309,
+                         "012_create_ativo_tamanho_camiseta_raw.sql"),
+    "formas_pagamento": (referenciais.formas_pagamento, 7248319310,
+                         "013_create_ativo_formas_pagamento_raw.sql"),
+    "produto": (referenciais.produto, 7248319311,
+                "014_create_ativo_produto_raw.sql"),
+    "combo": (referenciais.combo, 7248319312,
+              "015_create_ativo_combo_raw.sql"),
 }
 
 

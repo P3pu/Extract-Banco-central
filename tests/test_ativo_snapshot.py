@@ -67,15 +67,20 @@ def test_snapshot_cli_routes_evento():
     with patch("src.main.Settings.load"), patch("src.pipeline.ativo_snapshot.run") as run:
         assert main(["snapshot"]) == 0
         assert main(["snapshot", "--source", "ativo", "--entity", "evento", "--batch-size", "500"]) == 0
-    assert [call.kwargs["entity"] for call in run.call_args_list[:4]] == list(ativo_snapshot.ENTITIES)
-    assert run.call_count == 5
-    assert run.call_args_list[4].args[1] == 500
-    assert run.call_args_list[4].kwargs["entity"] == "evento"
+    count = len(ativo_snapshot.ENTITIES)
+    assert [call.kwargs["entity"] for call in run.call_args_list[:count]] == list(ativo_snapshot.ENTITIES)
+    assert run.call_count == count + 1
+    assert run.call_args_list[count].args[1] == 500
+    assert run.call_args_list[count].kwargs["entity"] == "evento"
 
 
 @pytest.mark.parametrize("contract", [referenciais.evento_modalidade,
                                       referenciais.modalidade_categoria,
-                                      referenciais.pedido_status])
+                                      referenciais.pedido_status,
+                                      referenciais.tamanho_camiseta,
+                                      referenciais.formas_pagamento,
+                                      referenciais.produto,
+                                      referenciais.combo])
 def test_reference_contracts_validate_schema_and_keyset(contract):
     columns = [{"COLUMN_NAME": name, "COLUMN_TYPE": spec[0],
                 "IS_NULLABLE": "YES" if spec[2] else "NO"}
@@ -97,6 +102,13 @@ def test_modalidade_zero_date_remains_text():
     query, _ = contract.page_query(10, 100)
     assert "CAST(t.`data_update` AS CHAR)" in query
     assert referenciais.modalidade_categoria.FIELDS["data_update"][1] == "TIMESTAMP"
+
+
+def test_tamanho_all_source_columns_and_unsigned_ids():
+    assert len(referenciais.tamanho_camiseta.COLUMNS) == 7
+    assert referenciais.tamanho_camiseta.FIELDS["nr_peso"][1] == "NUMERIC(10,2)"
+    assert referenciais.produto.FIELDS["id_produto"][1] == "BIGINT"
+    assert referenciais.combo.FIELDS["id_combo"][1] == "BIGINT"
 
 
 @pytest.mark.parametrize("failure", [False, True])

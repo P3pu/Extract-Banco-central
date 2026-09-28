@@ -50,7 +50,11 @@ def test_evento_temp_table_preserves_empty_dates_and_rollback():
 
 @pytest.mark.parametrize("contract", [referenciais.evento_modalidade,
                                       referenciais.modalidade_categoria,
-                                      referenciais.pedido_status])
+                                      referenciais.pedido_status,
+                                      referenciais.tamanho_camiseta,
+                                      referenciais.formas_pagamento,
+                                      referenciais.produto,
+                                      referenciais.combo])
 def test_reference_source_schema_and_pagination(contract):
     settings = Settings.load()
     with mysql.connect(settings, "ativo") as reader:
@@ -64,3 +68,32 @@ def test_reference_source_schema_and_pagination(contract):
                                       cursor=first[-1][0])
         assert len(first) == 5
         assert first[-1][0] < second[0][0]
+
+
+@pytest.mark.parametrize("contract,ddl,values", [
+    (referenciais.tamanho_camiseta, "012_create_ativo_tamanho_camiseta_raw.sql",
+     {"id_tamanho_camiseta": 2, "ds_tamanho": "teste", "id_situacao_cadastro": 1,
+      "disponivel_atleta": 0}),
+    (referenciais.formas_pagamento, "013_create_ativo_formas_pagamento_raw.sql",
+     {"id_formas_pagamento": 1, "ds_descricao": "teste"}),
+    (referenciais.produto, "014_create_ativo_produto_raw.sql",
+     {"id_produto": 1, "ds_titulo": "teste"}),
+    (referenciais.combo, "015_create_ativo_combo_raw.sql",
+     {"id_combo": 5, "ds_titulo": "teste"}),
+])
+def test_reference_temporary_copy(contract, ddl, values):
+    from uuid import uuid4
+
+    from src.config.settings import ROOT
+    from src.loaders import postgres_loader as loader
+
+    with postgres.connect(Settings.load()) as conn:
+        ddl_text = (ROOT / "sql/postgres" / ddl).read_text(encoding="utf-8")
+        conn.execute(ddl_text.replace(f"CREATE TABLE IF NOT EXISTS raw.ativo_{contract.TABLE[3:]}",
+                                      "CREATE TEMP TABLE integration_ref"))
+        target = ("pg_temp", "integration_ref")
+        loader.prepare(conn, target)
+        row = tuple(values.get(name) for name in contract.COLUMNS)
+        assert loader.upsert(conn, [row], uuid4(), target, contract.COLUMNS,
+                             contract.PK, "ativo") == 1
+        assert conn.execute("SELECT COUNT(*) FROM pg_temp.integration_ref").fetchone()[0] == 1

@@ -65,3 +65,37 @@ pedido_status = SnapshotReference(
         "id_pedido_status": ("int(11)", "INTEGER", False),
         "ds_status": ("varchar(50)", "VARCHAR(50)", False),
     })
+
+tamanho_camiseta = SnapshotReference(
+    TABLE="sa_tamanho_camiseta", PK="id_tamanho_camiseta",
+    FIELDS={
+        "id_tamanho_camiseta": ("int(11)", "INTEGER", False),
+        "ds_tamanho": ("varchar(50)", "VARCHAR(50)", False),
+        "nr_peso": ("decimal(10,2)", "NUMERIC(10,2)", True),
+        "vl_valor": ("decimal(10,2)", "NUMERIC(10,2)", True),
+        "id_situacao_cadastro": ("int(11)", "INTEGER", False),
+        "disponivel_atleta": ("int(1)", "INTEGER", False),
+        "id_pais_origem": ("int(11)", "INTEGER", True),
+    })
+
+formas_pagamento = SnapshotReference(
+    TABLE="sa_formas_pagamento", PK="id_formas_pagamento",
+    FIELDS={
+        "id_formas_pagamento": ("int(10)", "INTEGER", False),
+        "ds_descricao": ("varchar(255)", "VARCHAR(255)", True),
+    })
+
+produto = SnapshotReference(
+    TABLE="sa_produto", PK="id_produto",
+    FIELDS={
+        "id_produto": ("int(10) unsigned", "BIGINT", False),
+        "ds_titulo": ("varchar(250)", "VARCHAR(250)", False),
+        "data_update": ("timestamp", "TIMESTAMP", True),
+    })
+
+combo = SnapshotReference(
+    TABLE="sa_combo", PK="id_combo",
+    FIELDS={
+        "id_combo": ("int(10) unsigned", "BIGINT", False),
+        "ds_titulo": ("varchar(60)", "VARCHAR(60)", False),
+    })
