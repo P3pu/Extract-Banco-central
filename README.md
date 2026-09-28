@@ -1,11 +1,13 @@
 # Extract-Banco-central
 
 Pipeline Python para copiar Magento e Ativo (MySQL) para o PostgreSQL existente
-**Atendimento**, schema **raw**. Implementação atual: **Fases 1 a 5 e início da Fase 6 — infraestrutura, Magento, pedidos, inscrições e evento Ativo**.
+**Atendimento**, schema **raw**. Implementação atual: **Fases 1 a 5 e parte da
+Fase 6 — infraestrutura, Magento, pedidos, inscrições e quatro referenciais Ativo**.
 
 Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.magento_sales_order`, `raw.magento_sales_order_item`, `raw.ativo_pedido` e
-`raw.ativo_pedido_evento` e `raw.ativo_evento`.
+`raw.ativo_pedido_evento`, `raw.ativo_evento`, `raw.ativo_evento_modalidade`,
+`raw.ativo_modalidade_categoria` e `raw.ativo_pedido_status`.
 A inicialização é transacional e pode ser repetida.
 Não cria databases. A configuração recusa qualquer destino diferente de
 `Atendimento`. Tabelas existentes não são apagadas ou recriadas. A única
@@ -45,6 +47,10 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main incremental --source ativo --entity pedido_evento
 .venv\Scripts\python -m src.main reconcile --source ativo --entity pedido_evento --days 30
 .venv\Scripts\python -m src.main snapshot --source ativo --entity evento --batch-size 10000
+.venv\Scripts\python -m src.main snapshot --source ativo --entity evento_modalidade
+.venv\Scripts\python -m src.main snapshot --source ativo --entity modalidade_categoria
+.venv\Scripts\python -m src.main snapshot --source ativo --entity pedido_status
+.venv\Scripts\python -m src.main snapshot
 .venv\Scripts\python -m pytest -q
 ```
 
@@ -249,16 +255,32 @@ iguais na origem e no destino e nenhuma duplicata. Uma amostra de 10 registros
 coincidiu nos oito campos, e as 107/3 datas zero foram preservadas. Os testes
 incluem extração incompleta sem exclusão, UPSERT em tabela temporária e rollback.
 
+## Outros referenciais Ativo — snapshots implementados
+
+Em 2026-09-28, os campos mínimos, tipos e PKs reais de `sa_evento_modalidade`,
+`sa_modalidade_categoria` e `sa_pedido_status` foram confirmados na origem.
+O mesmo mecanismo transacional de `sa_evento` foi aplicado às três. Em
+`sa_evento_modalidade`, `data_update` é TEXT na RAW para preservar cinco
+timestamps zero; em `sa_modalidade_categoria`, sem datas zero observadas,
+permanece TIMESTAMP. `vl_kit` fica NUMERIC(10,2), sem cálculo.
+
+Os snapshots carregaram respectivamente 40.838, 161.374 e 6 linhas, com
+contagens iguais às origens. As amostras coincidiram em todos os campos
+selecionados (10/10, 10/10 e 6/6). As três execuções terminaram em SUCCESS.
+Sem `--entity`, `snapshot` executa os quatro referenciais disponíveis em
+sequência; cada um tem UUID, lock, transação e registro de execução próprios.
+
 ## Próximas fases previstas
 
 6. Continuar gradualmente com as demais entidades após inspecionar colunas,
-   PKs e índices reais; `sa_evento` já está implementada.
+   PKs e índices reais; quatro referenciais já estão implementados.
 
 `full`, `incremental` e `--batch-size` estão disponíveis para pedidos e itens Magento
 e para `sa_pedido` e `sa_pedido_evento`; `reconcile` e `--days` estão disponíveis
 para as duas entidades Ativo.
-`snapshot` está disponível para `sa_evento`; outras entidades referenciais
-serão adicionadas gradualmente.
+`snapshot` está disponível para `sa_evento`, `sa_evento_modalidade`,
+`sa_modalidade_categoria` e `sa_pedido_status`; outras entidades serão
+adicionadas gradualmente.
 `BATCH_SIZE=10000` e `RECONCILIATION_DAYS=30` já são validados na configuração.
 
 SNAPSHOT sincroniza tabelas pequenas transacionalmente usando COPY e tabela

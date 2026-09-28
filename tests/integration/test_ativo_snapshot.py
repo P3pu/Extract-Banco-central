@@ -4,7 +4,7 @@ import pytest
 
 from src.config.settings import Settings
 from src.db import mysql, postgres
-from src.sources.ativo import evento
+from src.sources.ativo import evento, referenciais
 
 pytestmark = pytest.mark.skipif(os.environ.get("RUN_INTEGRATION") != "1", reason="RUN_INTEGRATION=1 necessário")
 
@@ -14,9 +14,9 @@ def test_evento_source_schema_and_zero_dates():
     with mysql.connect(settings, "ativo") as reader:
         db = settings.database("ativo").database
         evento.validate_schema(reader.columns(db, "sa_evento"), reader.indexes(db, "sa_evento"))
-        count, upper = reader.ativo_evento_bounds()
+        count, upper = reader.snapshot_bounds(evento)
         assert count > 0 and upper >= count
-        rows = reader.ativo_evento_page(batch_size=5, upper_id=upper)
+        rows = reader.snapshot_page(evento, batch_size=5, upper_id=upper)
         assert len(rows) == 5
         assert [row[0] for row in rows] == sorted(row[0] for row in rows)
 
@@ -46,3 +46,21 @@ def test_evento_temp_table_preserves_empty_dates_and_rollback():
                 conn.execute("DELETE FROM pg_temp.integration_evento")
                 raise RuntimeError("rollback simulado")
         assert conn.execute("SELECT COUNT(*) FROM pg_temp.integration_evento").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("contract", [referenciais.evento_modalidade,
+                                      referenciais.modalidade_categoria,
+                                      referenciais.pedido_status])
+def test_reference_source_schema_and_pagination(contract):
+    settings = Settings.load()
+    with mysql.connect(settings, "ativo") as reader:
+        db = settings.database("ativo").database
+        contract.validate_schema(reader.columns(db, contract.TABLE),
+                                 reader.indexes(db, contract.TABLE))
+        count, upper = reader.snapshot_bounds(contract)
+        assert count > 0 and upper >= count
+        first = reader.snapshot_page(contract, batch_size=5, upper_id=upper)
+        second = reader.snapshot_page(contract, batch_size=5, upper_id=upper,
+                                      cursor=first[-1][0])
+        assert len(first) == 5
+        assert first[-1][0] < second[0][0]

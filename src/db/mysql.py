@@ -90,18 +90,17 @@ class MySQLReader:
             cursor.execute(query, params)
             return cursor.fetchall()
 
-    def ativo_evento_bounds(self):
+    def snapshot_bounds(self, contract):
         with self._connection.cursor() as cursor:
             cursor.execute("SELECT @@tx_isolation, @@session.time_zone, @@system_time_zone")
             isolation, zone, system_zone = cursor.fetchone()
             if isolation.upper() != "REPEATABLE-READ" or (zone != "UTC" and not (zone == "SYSTEM" and system_zone == "UTC")):
                 raise ValueError("Isolamento ou fuso do Ativo divergente do contrato")
-            cursor.execute("SELECT COUNT(*), MAX(id_evento) FROM sa_evento")
+            cursor.execute(f"SELECT COUNT(*), MAX(`{contract.PK}`) FROM `{contract.TABLE}`")
             return cursor.fetchone()
 
-    def ativo_evento_page(self, **kwargs):
-        from src.sources.ativo.evento import page_query
-        query, params = page_query(**kwargs)
+    def snapshot_page(self, contract, **kwargs):
+        query, params = contract.page_query(**kwargs)
         with self._connection.cursor() as cursor:
             cursor.execute(query, params)
             return cursor.fetchall()

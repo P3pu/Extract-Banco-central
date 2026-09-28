@@ -47,7 +47,8 @@ def parser():
     reconcile.add_argument("--days", type=int)
     snapshot = commands.add_parser("snapshot", help="Sincroniza referências Ativo de forma transacional")
     snapshot.add_argument("--source", choices=["ativo"], default="ativo")
-    snapshot.add_argument("--entity", choices=["evento"], default="evento")
+    snapshot.add_argument("--entity", choices=["evento", "evento_modalidade",
+                                              "modalidade_categoria", "pedido_status"])
     snapshot.add_argument("--batch-size", type=int)
     return root
 
@@ -58,8 +59,9 @@ def main(argv=None):
         settings = Settings.load(**({"env_file": args.env_file} if args.env_file else {}))
         if args.command in {"full", "incremental", "reconcile", "snapshot"}:
             if args.command == "snapshot":
-                from src.pipeline.ativo_snapshot import run
-                run(settings, args.batch_size, entity=args.entity)
+                from src.pipeline.ativo_snapshot import ENTITIES, run
+                for entity in ([args.entity] if args.entity else ENTITIES):
+                    run(settings, args.batch_size, entity=entity)
             elif args.command == "reconcile":
                 from src.pipeline.ativo_pedido import run
                 for entity in ([args.entity] if args.entity else ["pedido", "pedido_evento"]):

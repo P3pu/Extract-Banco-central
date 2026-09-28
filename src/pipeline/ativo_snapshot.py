@@ -10,26 +10,34 @@ from psycopg import sql
 from src.config.settings import ROOT
 from src.db import mysql, postgres
 from src.loaders import postgres_loader as loader
-from src.sources.ativo import evento
+from src.sources.ativo import evento, referenciais
 
-ENTITIES = {"evento": (evento, 7248319303, "006_create_ativo_evento_raw.sql")}
+ENTITIES = {
+    "evento": (evento, 7248319303, "006_create_ativo_evento_raw.sql"),
+    "evento_modalidade": (referenciais.evento_modalidade, 7248319304,
+                          "007_create_ativo_evento_modalidade_raw.sql"),
+    "modalidade_categoria": (referenciais.modalidade_categoria, 7248319305,
+                             "008_create_ativo_modalidade_categoria_raw.sql"),
+    "pedido_status": (referenciais.pedido_status, 7248319306,
+                      "009_create_ativo_pedido_status_raw.sql"),
+}
 
 
-def log(event, **fields):
+def log(event, entity="evento", **fields):
     print(json.dumps({"event": event, "at": datetime.now(timezone.utc).isoformat(),
-                      "source": "ativo", "table": "sa_evento", **fields}, default=str), flush=True)
+                      "source": "ativo", "table": f"sa_{entity}", **fields}, default=str), flush=True)
 
 
 def load(connection, reader, batch_size, batch_id, progress, entity="evento"):
     contract, _, ddl = ENTITIES[entity]
     target = ("raw", f"ativo_{entity}")
-    source_count, upper_id = getattr(reader, f"ativo_{entity}_bounds")()
+    source_count, upper_id = reader.snapshot_bounds(contract)
     connection.execute((ROOT / "sql/postgres" / ddl).read_text(encoding="utf-8"))
     loader.prepare(connection, target)
     cursor = None
     while upper_id is not None:
-        rows = getattr(reader, f"ativo_{entity}_page")(
-            batch_size=batch_size, upper_id=upper_id, cursor=cursor)
+        rows = reader.snapshot_page(contract, batch_size=batch_size,
+                                    upper_id=upper_id, cursor=cursor)
         if not rows:
             break
         progress["rows_extracted"] += len(rows)
@@ -37,7 +45,7 @@ def load(connection, reader, batch_size, batch_id, progress, entity="evento"):
             connection, rows, batch_id, target, columns=contract.COLUMNS,
             pk=contract.PK, source="ativo")
         cursor = rows[-1][0]
-        log("batch", batch_id=batch_id, mode="SNAPSHOT", **progress)
+        log("batch", entity=entity, batch_id=batch_id, mode="SNAPSHOT", **progress)
     if source_count != progress["rows_extracted"]:
         raise ValueError("Contagem de origem divergente; snapshot revertido")
     removed = connection.execute(
@@ -47,7 +55,7 @@ def load(connection, reader, batch_size, batch_id, progress, entity="evento"):
         sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier(*target))).fetchone()[0]
     if destination_count != source_count:
         raise ValueError("Contagem origem/destino divergente; snapshot revertido")
-    log("validated", batch_id=batch_id, mode="SNAPSHOT", source_count=source_count,
+    log("validated", entity=entity, batch_id=batch_id, mode="SNAPSHOT", source_count=source_count,
         destination_count=destination_count, rows_removed=removed)
     return removed
 
@@ -69,7 +77,7 @@ def run(settings, batch_size=None, entity="evento"):
             "VALUES (%s,%s,%s,%s,'SNAPSHOT','RUNNING')", (batch_id, *key))
         connection.commit()
         try:
-            log("started", batch_id=batch_id, mode="SNAPSHOT")
+            log("started", entity=entity, batch_id=batch_id, mode="SNAPSHOT")
             with mysql.connect(settings, "ativo") as reader:
                 db = settings.database("ativo").database
                 contract.validate_schema(reader.columns(db, f"sa_{entity}"),
@@ -93,12 +101,12 @@ def run(settings, batch_size=None, entity="evento"):
                 "rows_extracted=%s,rows_loaded=0,error_message=%s WHERE batch_id=%s AND status='RUNNING'",
                 (progress["rows_extracted"], type(exc).__name__, batch_id))
             connection.commit()
-            log("failed", batch_id=batch_id, mode="SNAPSHOT", error=type(exc).__name__,
+            log("failed", entity=entity, batch_id=batch_id, mode="SNAPSHOT", error=type(exc).__name__,
                 duration_seconds=round(monotonic()-started, 2))
             raise
         finally:
             if not connection.closed:
                 connection.execute("SELECT pg_advisory_unlock(%s)", (lock_id,))
-        log("success", batch_id=batch_id, mode="SNAPSHOT", rows_removed=removed,
+        log("success", entity=entity, batch_id=batch_id, mode="SNAPSHOT", rows_removed=removed,
             duration_seconds=round(monotonic()-started, 2), **progress)
     return batch_id

@@ -1,6 +1,7 @@
 """Contrato mínimo de sa_evento confirmado no MySQL Ativo em 2026-09-28."""
 
 PK = "id_evento"
+TABLE = "sa_evento"
 FIELDS = {
     "id_evento": ("int(11)", "INTEGER", False),
     "id_campanha_salesforce": ("varchar(50)", "VARCHAR(50)", True),
