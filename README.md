@@ -1,10 +1,11 @@
 # Extract-Banco-central
 
 Pipeline Python para copiar Magento e Ativo (MySQL) para o PostgreSQL existente
-**Atendimento**, schema **raw**. Implementação atual: **Fases 1 a 3 — infraestrutura, pedidos e itens Magento**.
+**Atendimento**, schema **raw**. Implementação atual: **Fases 1 a 4 — infraestrutura, Magento e pedidos Ativo**.
 
 Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
-`raw.magento_sales_order` e `raw.magento_sales_order_item`. A inicialização é transacional e pode ser repetida.
+`raw.magento_sales_order`, `raw.magento_sales_order_item` e `raw.ativo_pedido`.
+A inicialização é transacional e pode ser repetida.
 Não cria databases. A configuração recusa qualquer destino diferente de
 `Atendimento`. Tabelas existentes não são apagadas ou recriadas; `IF NOT EXISTS`
 não migra estruturas preexistentes incompatíveis.
@@ -35,6 +36,9 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main incremental --source magento --entity sales_order
 .venv\Scripts\python -m src.main full --source magento --entity sales_order_item --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source magento --entity sales_order_item
+.venv\Scripts\python -m src.main full --source ativo --entity pedido --batch-size 10000
+.venv\Scripts\python -m src.main incremental --source ativo --entity pedido
+.venv\Scripts\python -m src.main reconcile --source ativo --entity pedido --days 30
 .venv\Scripts\python -m pytest -q
 ```
 
@@ -43,8 +47,9 @@ aplica os dois primeiros arquivos de `sql/postgres` em uma transação. Exceçõ
 rollback. `inspect` consulta colunas e índices reais no `information_schema`,
 sem ler registros pessoais. Use-o antes de definir as tabelas RAW de negócio.
 Também é possível passar `--env-file CAMINHO` antes do subcomando.
-Sem `--entity`, FULL/incremental executam as duas entidades Magento em sequência,
-cada uma com seu próprio UUID, lock, transação e watermark. Uma falha interrompe
+Sem `--source`, FULL/incremental executam os dois objetos Magento e `sa_pedido`
+em sequência. Com `--source magento` sem `--entity`, executam as duas entidades
+Magento. Cada uma tem seu próprio UUID, lock, transação e watermark. Uma falha interrompe
 a sequência; uma entidade já confirmada não é revertida pela falha da seguinte.
 
 MySQL usa TLS com validação do certificado e uma transação `READ ONLY`, encerrada
@@ -153,19 +158,52 @@ As duas execuções terminaram em SUCCESS, com watermark `2026-09-28T11:42:08`
 no fuso da origem. Foram aprovados 36 testes unitários e 4 de integração.
 Os totais registram essa validação; a origem segue recebendo pedidos e itens.
 
+## sa_pedido — implementado
+
+Os 19 campos solicitados, a PK física `id_pedido` e o índice em `dt_pedido`
+foram verificados no Ativo MySQL 5.7 em 2026-09-28. FULL percorre a PK em lotes;
+INCREMENTAL lê apenas IDs maiores que o watermark; RECONCILIATION relê por
+padrão os últimos 30 dias usando o índice `dt_pedido`, ordenado por
+`(dt_pedido, id_pedido)` para tratar datas iguais. `--days` e `--batch-size`
+ajustam a janela e o lote. Reconciliação usa UPSERT e mantém inalterado o
+watermark da PK, para não deixar de buscar IDs novos em uma execução futura.
+
+Foi encontrada 1 data zero em `dt_pedido` e 303 em `dt_alteracao`. PostgreSQL
+TIMESTAMP não aceita `0000-00-00 00:00:00`; por isso, essas duas colunas são
+TEXT na RAW para preservar o valor original. Datas válidas permanecem no formato
+textual original da origem, sem cálculo ou ajuste de fuso. A sessão MySQL do
+Ativo usa UTC. A seleção da reconciliação acontece no TIMESTAMP indexado do
+MySQL; a RAW não usa a coluna textual para filtragem de carga. `dt_alteracao`
+não é usada como filtro, evitando varreduras frequentes. A janela de 30 dias
+continha 18.717 pedidos durante a inspeção.
+
+Falhas reverterão dados e watermark da execução. O mesmo controle de UUID,
+logs sem payload, isolamento de leitura, COPY em tabela temporária e UPSERT por
+PK se aplica. Não há regras de negócio sobre taxas, descontos ou status.
+
+Validação realizada em 2026-09-28: FULL de 5.738.531 pedidos, com contagens
+iguais na visão da origem e na RAW, concluído em 394,18 segundos. Um incremental
+carregou 4 IDs novos; a reconciliação de 30 dias releu 18.718 linhas e manteve
+o watermark em `121642681`. Outro incremental carregou 2 IDs e avançou o
+watermark para `121642683`. A RAW terminou a validação com 5.738.537 IDs.
+Uma amostra de 10 pedidos coincidiu nos 19 campos da origem. A RAW manteve 1
+`dt_pedido` zero e 303 `dt_alteracao` zero. As quatro execuções terminaram em
+SUCCESS. Foram aprovados 44 testes unitários e 6 de integração. Os totais
+registram a validação; a origem continua recebendo pedidos.
+
 ## Próximas fases previstas
 
 4. `sa_pedido`: FULL, incremental por PK e reconciliação por `dt_pedido`.
 5. `sa_pedido_evento`: FULL, incremental por PK e reconciliação por pedidos recentes.
 6. Demais entidades, após inspecionar colunas, PKs e índices reais.
 
-`full`, `incremental` e `--batch-size` estão disponíveis para pedidos e itens Magento.
-Os comandos `reconcile`, `snapshot` e `--days` pertencem às próximas fases.
+`full`, `incremental` e `--batch-size` estão disponíveis para pedidos e itens Magento
+e para `sa_pedido`; `reconcile` e `--days` estão disponíveis para `sa_pedido`.
+`snapshot` pertence às próximas fases.
 `BATCH_SIZE=10000` e `RECONCILIATION_DAYS=30` já são validados na configuração.
 
-No Ativo, INCREMENTAL por PK buscará
-IDs novos; RECONCILIATION relerá registros recentes para capturar alterações em
-IDs antigos; SNAPSHOT sincronizará tabelas pequenas transacionalmente. O carregador
+Na Fase 5, `sa_pedido_evento` usará INCREMENTAL por PK e RECONCILIATION por pedidos
+recentes; SNAPSHOT sincronizará tabelas pequenas transacionalmente. O carregador
 usará a mesma estratégia COPY e tabela temporária para UPSERT, preservando campos originais e
 adicionando `_source`, `_extracted_at` em UTC e `_batch_id` UUID.
 

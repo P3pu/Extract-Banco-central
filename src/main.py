@@ -1,4 +1,4 @@
-"""CLI RAW: infraestrutura, pedidos e itens Magento (Fases 1 a 3)."""
+"""CLI RAW: infraestrutura, Magento e sa_pedido (Fases 1 a 4)."""
 
 import argparse
 import json
@@ -26,7 +26,7 @@ def safe_error(exc):
 
 
 def parser():
-    root = argparse.ArgumentParser(description="Pipeline RAW — Fases 1 a 3")
+    root = argparse.ArgumentParser(description="Pipeline RAW — Fases 1 a 4")
     root.add_argument("--env-file", type=Path)
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("init", help="Cria raw e tabelas técnicas no Atendimento")
@@ -36,10 +36,15 @@ def parser():
     inspect.add_argument("--source", choices=["magento", "ativo"], required=True)
     inspect.add_argument("--table", required=True)
     for mode in ("full", "incremental"):
-        load = commands.add_parser(mode, help="Carga de pedidos e itens Magento")
-        load.add_argument("--source", choices=["magento"], default="magento")
-        load.add_argument("--entity", choices=["sales_order", "sales_order_item"])
+        load = commands.add_parser(mode, help="Carga de Magento e Ativo")
+        load.add_argument("--source", choices=["magento", "ativo"])
+        load.add_argument("--entity", choices=["sales_order", "sales_order_item", "pedido"])
         load.add_argument("--batch-size", type=int)
+    reconcile = commands.add_parser("reconcile", help="Reconcilia pedidos Ativo por dt_pedido")
+    reconcile.add_argument("--source", choices=["ativo"], default="ativo")
+    reconcile.add_argument("--entity", choices=["pedido"], default="pedido")
+    reconcile.add_argument("--batch-size", type=int)
+    reconcile.add_argument("--days", type=int)
     return root
 
 
@@ -47,10 +52,23 @@ def main(argv=None):
     args = parser().parse_args(argv)
     try:
         settings = Settings.load(**({"env_file": args.env_file} if args.env_file else {}))
-        if args.command in {"full", "incremental"}:
-            from src.pipeline.sales_order import run
-            for entity in ([args.entity] if args.entity else ["sales_order", "sales_order_item"]):
-                run(settings, args.command.upper(), args.batch_size, entity=entity)
+        if args.command in {"full", "incremental", "reconcile"}:
+            if args.command == "reconcile":
+                from src.pipeline.ativo_pedido import run
+                run(settings, "RECONCILIATION", args.batch_size, args.days)
+            else:
+                source = args.source or ("ativo" if args.entity == "pedido" else "magento" if args.entity else None)
+                if source == "ativo" and args.entity not in (None, "pedido"):
+                    raise ConfigurationError("Entidade incompatível com Ativo")
+                if source == "magento" and args.entity == "pedido":
+                    raise ConfigurationError("Entidade incompatível com Magento")
+                if source != "ativo":
+                    from src.pipeline.sales_order import run
+                    for entity in ([args.entity] if args.entity else ["sales_order", "sales_order_item"]):
+                        run(settings, args.command.upper(), args.batch_size, entity=entity)
+                if source != "magento":
+                    from src.pipeline.ativo_pedido import run
+                    run(settings, args.command.upper(), args.batch_size)
         elif args.command == "init":
             from src.db.postgres import connect, initialize
             with connect(settings) as connection:
