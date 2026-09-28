@@ -1,15 +1,16 @@
 # Extract-Banco-central
 
 Pipeline Python para copiar Magento e Ativo (MySQL) para o PostgreSQL existente
-**Atendimento**, schema **raw**. Implementação atual: **Fases 1 a 5 — infraestrutura, Magento, pedidos e inscrições Ativo**.
+**Atendimento**, schema **raw**. Implementação atual: **Fases 1 a 5 e início da Fase 6 — infraestrutura, Magento, pedidos, inscrições e evento Ativo**.
 
 Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.magento_sales_order`, `raw.magento_sales_order_item`, `raw.ativo_pedido` e
-`raw.ativo_pedido_evento`.
+`raw.ativo_pedido_evento` e `raw.ativo_evento`.
 A inicialização é transacional e pode ser repetida.
 Não cria databases. A configuração recusa qualquer destino diferente de
-`Atendimento`. Tabelas existentes não são apagadas ou recriadas; `IF NOT EXISTS`
-não migra estruturas preexistentes incompatíveis.
+`Atendimento`. Tabelas existentes não são apagadas ou recriadas. A única
+migração implementada ajusta `fl_amigo` na RAW de inscrições para preservar
+strings vazias; outras estruturas preexistentes incompatíveis exigem avaliação.
 
 ## Instalação
 
@@ -43,6 +44,7 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main full --source ativo --entity pedido_evento --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source ativo --entity pedido_evento
 .venv\Scripts\python -m src.main reconcile --source ativo --entity pedido_evento --days 30
+.venv\Scripts\python -m src.main snapshot --source ativo --entity evento --batch-size 10000
 .venv\Scripts\python -m pytest -q
 ```
 
@@ -229,19 +231,39 @@ Após a migração de `fl_amigo`, a RAW tinha 12.506.395 IDs, com watermark
 coincidiu nos 30 campos. Foram aprovados 50 testes unitários e 8 de integração.
 Os totais são do momento da validação; a origem continua recebendo inscrições.
 
+## sa_evento — snapshot implementado
+
+Os oito campos mínimos, a PK `id_evento` e os tipos reais foram confirmados no
+MySQL em 2026-09-28. `dt_evento` contém 107 datas zero e `dt_modificacao` contém
+3; ambos ficam como texto literal na RAW. `id_campanha_salesforce` conserva seu
+nome e valor, sem conversão em SKU.
+
+`snapshot` extrai a visão completa em lotes por PK, faz COPY/UPSERT e só remove
+linhas ausentes da origem depois que a extração termina com a contagem esperada.
+Todas as alterações ficam na mesma transação PostgreSQL: falha provoca rollback
+e preserva o snapshot anterior. O UUID do lote identifica a versão atual na
+RAW, enquanto a tabela de controle registra execução e último snapshot bem-sucedido.
+
+O primeiro snapshot e a repetição carregaram 22.702 linhas cada, com contagens
+iguais na origem e no destino e nenhuma duplicata. Uma amostra de 10 registros
+coincidiu nos oito campos, e as 107/3 datas zero foram preservadas. Os testes
+incluem extração incompleta sem exclusão, UPSERT em tabela temporária e rollback.
+
 ## Próximas fases previstas
 
-6. Demais entidades, após inspecionar colunas, PKs e índices reais.
+6. Continuar gradualmente com as demais entidades após inspecionar colunas,
+   PKs e índices reais; `sa_evento` já está implementada.
 
 `full`, `incremental` e `--batch-size` estão disponíveis para pedidos e itens Magento
 e para `sa_pedido` e `sa_pedido_evento`; `reconcile` e `--days` estão disponíveis
 para as duas entidades Ativo.
-`snapshot` pertence às próximas fases.
+`snapshot` está disponível para `sa_evento`; outras entidades referenciais
+serão adicionadas gradualmente.
 `BATCH_SIZE=10000` e `RECONCILIATION_DAYS=30` já são validados na configuração.
 
-Na Fase 6, SNAPSHOT sincronizará tabelas pequenas transacionalmente. O carregador
-usará a mesma estratégia COPY e tabela temporária para UPSERT, preservando campos originais e
-adicionando `_source`, `_extracted_at` em UTC e `_batch_id` UUID.
+SNAPSHOT sincroniza tabelas pequenas transacionalmente usando COPY e tabela
+temporária para UPSERT, preservando campos originais e adicionando `_source`,
+`_extracted_at` em UTC e `_batch_id` UUID.
 
 Os testes atuais cobrem configuração, segredos, proteção do database, conexão
 MySQL somente leitura, parametrização, paginação, janela incremental, concorrência,

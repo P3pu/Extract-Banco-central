@@ -1,4 +1,4 @@
-"""CLI RAW: infraestrutura, Magento e pedidos/inscrições Ativo (Fases 1 a 5)."""
+"""CLI RAW: Magento e Ativo, incluindo snapshots referenciais (Fase 6)."""
 
 import argparse
 import json
@@ -26,7 +26,7 @@ def safe_error(exc):
 
 
 def parser():
-    root = argparse.ArgumentParser(description="Pipeline RAW — Fases 1 a 5")
+    root = argparse.ArgumentParser(description="Pipeline RAW — Fases 1 a 6")
     root.add_argument("--env-file", type=Path)
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("init", help="Cria raw e tabelas técnicas no Atendimento")
@@ -45,6 +45,10 @@ def parser():
     reconcile.add_argument("--entity", choices=["pedido", "pedido_evento"])
     reconcile.add_argument("--batch-size", type=int)
     reconcile.add_argument("--days", type=int)
+    snapshot = commands.add_parser("snapshot", help="Sincroniza referências Ativo de forma transacional")
+    snapshot.add_argument("--source", choices=["ativo"], default="ativo")
+    snapshot.add_argument("--entity", choices=["evento"], default="evento")
+    snapshot.add_argument("--batch-size", type=int)
     return root
 
 
@@ -52,8 +56,11 @@ def main(argv=None):
     args = parser().parse_args(argv)
     try:
         settings = Settings.load(**({"env_file": args.env_file} if args.env_file else {}))
-        if args.command in {"full", "incremental", "reconcile"}:
-            if args.command == "reconcile":
+        if args.command in {"full", "incremental", "reconcile", "snapshot"}:
+            if args.command == "snapshot":
+                from src.pipeline.ativo_snapshot import run
+                run(settings, args.batch_size, entity=args.entity)
+            elif args.command == "reconcile":
                 from src.pipeline.ativo_pedido import run
                 for entity in ([args.entity] if args.entity else ["pedido", "pedido_evento"]):
                     run(settings, "RECONCILIATION", args.batch_size, args.days, entity=entity)
