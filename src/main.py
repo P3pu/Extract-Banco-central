@@ -40,12 +40,13 @@ def parser():
         load.add_argument("--source", choices=["magento", "ativo"])
         load.add_argument("--entity", choices=["sales_order", "sales_order_item", "pedido",
                                                "pedido_evento", "usuario", "usuario_balcao",
-                                               "pedido_pagamento", "transacao"])
+                                               "pedido_pagamento", "transacao",
+                                               "pedido_produto", "pedido_endereco"])
         load.add_argument("--batch-size", type=int)
     reconcile = commands.add_parser("reconcile", help="Reconcilia pedidos e inscrições Ativo")
     reconcile.add_argument("--source", choices=["ativo"], default="ativo")
     reconcile.add_argument("--entity", choices=["pedido", "pedido_evento", "usuario", "usuario_balcao",
-                                                "pedido_pagamento", "transacao"])
+                                                "pedido_pagamento", "transacao", "pedido_endereco"])
     reconcile.add_argument("--batch-size", type=int)
     reconcile.add_argument("--days", type=int)
     snapshot = commands.add_parser("snapshot", help="Sincroniza referências Ativo de forma transacional")
@@ -53,7 +54,8 @@ def parser():
     snapshot.add_argument("--entity", choices=["evento", "evento_modalidade",
                                               "modalidade_categoria", "pedido_status",
                                               "tamanho_camiseta", "formas_pagamento",
-                                              "produto", "combo", "cidade", "estado", "pais"])
+                                              "produto", "combo", "cidade", "estado", "pais",
+                                              "pedido_produto"])
     snapshot.add_argument("--batch-size", type=int)
     return root
 
@@ -64,23 +66,30 @@ def main(argv=None):
         settings = Settings.load(**({"env_file": args.env_file} if args.env_file else {}))
         if args.command in {"full", "incremental", "reconcile", "snapshot"}:
             if args.command == "snapshot":
-                from src.pipeline.ativo_snapshot import ENTITIES, run
-                for entity in ([args.entity] if args.entity else ENTITIES):
-                    run(settings, args.batch_size, entity=entity)
+                from src.pipeline.ativo_snapshot import ENTITIES, run as run_reference
+                for entity in ([args.entity] if args.entity else [*ENTITIES, "pedido_produto"]):
+                    if entity == "pedido_produto":
+                        from src.pipeline.ativo_complementos import run
+                        run(settings, "SNAPSHOT", args.batch_size, entity=entity)
+                    else:
+                        run_reference(settings, args.batch_size, entity=entity)
             elif args.command == "reconcile":
                 for entity in ([args.entity] if args.entity else ["pedido", "pedido_evento",
                                                                   "usuario", "usuario_balcao",
-                                                                  "pedido_pagamento"]):
+                                                                  "pedido_pagamento", "pedido_endereco"]):
                     if entity in ("pedido", "pedido_evento"):
                         from src.pipeline.ativo_pedido import run
                     elif entity in ("usuario", "usuario_balcao"):
                         from src.pipeline.ativo_usuario import run
-                    else:
+                    elif entity == "pedido_pagamento" or entity == "transacao":
                         from src.pipeline.ativo_financeiro import run
+                    else:
+                        from src.pipeline.ativo_complementos import run
                     run(settings, "RECONCILIATION", args.batch_size, args.days, entity=entity)
             else:
                 ativo_entities = ("pedido", "pedido_evento", "usuario", "usuario_balcao",
-                                  "pedido_pagamento", "transacao")
+                                  "pedido_pagamento", "transacao", "pedido_produto",
+                                  "pedido_endereco")
                 source = args.source or ("ativo" if args.entity in ativo_entities else "magento" if args.entity else None)
                 if source == "ativo" and args.entity not in (None, *ativo_entities):
                     raise ConfigurationError("Entidade incompatível com Ativo")
@@ -96,8 +105,10 @@ def main(argv=None):
                             from src.pipeline.ativo_pedido import run
                         elif entity in ("usuario", "usuario_balcao"):
                             from src.pipeline.ativo_usuario import run
-                        else:
+                        elif entity in ("pedido_pagamento", "transacao"):
                             from src.pipeline.ativo_financeiro import run
+                        else:
+                            from src.pipeline.ativo_complementos import run
                         run(settings, args.command.upper(), args.batch_size, entity=entity)
         elif args.command == "init":
             from src.db.postgres import connect, initialize

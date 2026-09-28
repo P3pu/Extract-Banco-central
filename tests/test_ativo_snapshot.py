@@ -81,7 +81,9 @@ def test_snapshot_replaces_only_nul_and_counts_replacements():
 
 
 def test_snapshot_cli_routes_evento():
-    with patch("src.main.Settings.load"), patch("src.pipeline.ativo_snapshot.run") as run:
+    with patch("src.main.Settings.load"), \
+         patch("src.pipeline.ativo_snapshot.run") as run, \
+         patch("src.pipeline.ativo_complementos.run") as product_run:
         assert main(["snapshot"]) == 0
         assert main(["snapshot", "--source", "ativo", "--entity", "evento", "--batch-size", "500"]) == 0
     count = len(ativo_snapshot.ENTITIES)
@@ -89,6 +91,8 @@ def test_snapshot_cli_routes_evento():
     assert run.call_count == count + 1
     assert run.call_args_list[count].args[1] == 500
     assert run.call_args_list[count].kwargs["entity"] == "evento"
+    assert product_run.call_count == 1
+    assert product_run.call_args.args[1] == "SNAPSHOT"
 
 
 @pytest.mark.parametrize("contract", [referenciais.evento_modalidade,

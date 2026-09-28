@@ -3,7 +3,7 @@
 Pipeline Python para copiar Magento e Ativo (MySQL) para o PostgreSQL existente
 **Atendimento**, schema **raw**. Implementação atual: **Fases 1 a 5 e parte da
 Fase 6 — infraestrutura, Magento, pedidos, inscrições, usuários, pagamentos,
-transações e onze referenciais Ativo**.
+transações, produtos de pedido, endereços e onze referenciais Ativo**.
 
 Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.magento_sales_order`, `raw.magento_sales_order_item`, `raw.ativo_pedido` e
@@ -12,7 +12,8 @@ Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.ativo_usuario`, `raw.ativo_usuario_balcao`, `raw.ativo_tamanho_camiseta`,
 `raw.ativo_formas_pagamento`, `raw.ativo_produto`, `raw.ativo_combo`,
 `raw.ativo_cidade`, `raw.ativo_estado`, `raw.ativo_pais`,
-`raw.ativo_pedido_pagamento` e `raw.ativo_transacao`.
+`raw.ativo_pedido_pagamento`, `raw.ativo_transacao`,
+`raw.ativo_pedido_produto` e `raw.ativo_pedido_endereco`.
 A inicialização é transacional e pode ser repetida.
 Não cria databases. A configuração recusa qualquer destino diferente de
 `Atendimento`. Tabelas existentes não são apagadas ou recriadas. A única
@@ -63,6 +64,12 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main full --source ativo --entity transacao --batch-size 20000
 .venv\Scripts\python -m src.main incremental --source ativo --entity transacao
 .venv\Scripts\python -m src.main reconcile --source ativo --entity transacao --days 30
+.venv\Scripts\python -m src.main full --source ativo --entity pedido_produto --batch-size 10000
+.venv\Scripts\python -m src.main incremental --source ativo --entity pedido_produto
+.venv\Scripts\python -m src.main snapshot --source ativo --entity pedido_produto
+.venv\Scripts\python -m src.main full --source ativo --entity pedido_endereco --batch-size 20000
+.venv\Scripts\python -m src.main incremental --source ativo --entity pedido_endereco
+.venv\Scripts\python -m src.main reconcile --source ativo --entity pedido_endereco --days 30
 .venv\Scripts\python -m src.main snapshot --source ativo --entity evento --batch-size 10000
 .venv\Scripts\python -m src.main snapshot --source ativo --entity evento_modalidade
 .venv\Scripts\python -m src.main snapshot --source ativo --entity modalidade_categoria
@@ -83,12 +90,15 @@ aplica os dois primeiros arquivos de `sql/postgres` em uma transação. Exceçõ
 rollback. `inspect` consulta colunas e índices reais no `information_schema`,
 sem ler registros pessoais. Use-o antes de definir as tabelas RAW de negócio.
 Também é possível passar `--env-file CAMINHO` antes do subcomando.
-Sem `--source`, FULL/incremental executam os dois objetos Magento e as seis
+Sem `--source`, FULL/incremental executam os dois objetos Magento e as oito
 entidades Ativo com carga por PK (`sa_pedido`, `sa_pedido_evento`, `sa_usuario`,
-`sa_usuario_balcao`, `sa_pedido_pagamento` e `sa_transacao`) em sequência.
-`reconcile` sem `--entity` percorre as quatro entidades anteriores e
-`sa_pedido_pagamento`; `sa_transacao` só é reconciliada quando solicitada
+`sa_usuario_balcao`, `sa_pedido_pagamento`, `sa_transacao`,
+`sa_pedido_produto` e `sa_pedido_endereco`) em sequência.
+`reconcile` sem `--entity` percorre `sa_pedido`, `sa_pedido_evento`,
+`sa_usuario`, `sa_usuario_balcao`, `sa_pedido_pagamento` e
+`sa_pedido_endereco`; `sa_transacao` só é reconciliada quando solicitada
 explicitamente, porque a origem não tem índice nas colunas de data.
+`snapshot` sem `--entity` percorre os onze referenciais e `sa_pedido_produto`.
 Com `--source magento` sem `--entity`, executam as duas
 entidades Magento. Cada uma tem seu próprio UUID, lock, transação e watermark. Uma falha interrompe
 a sequência; uma entidade já confirmada não é revertida pela falha da seguinte.
@@ -395,23 +405,52 @@ O FULL de transações carregou 2.080.550 linhas com contagens iguais e
 watermark `2080587`; um incremental trouxe 2 novos IDs, e a reconciliação
 explícita releu 4.908 linhas sem avançar o watermark. Amostras do início e
 do fim da PK e dez transações com cancelamento coincidiram nos sete campos.
-Os totais mudam enquanto a origem
-está em operação.
+Os totais mudam enquanto a origem está em operação.
+
+## sa_pedido_produto e sa_pedido_endereco — implementados
+
+Os cinco e dez campos mínimos, respectivamente, foram validados contra a
+origem. `sa_pedido_produto` tem PK física `id_pedido_produto` e preço
+NUMERIC(10,2), sem agregação ou cálculo. `sa_pedido_endereco` tem PK
+`id_pedido_endereco` e índice em `id_pedido`. Seus campos textuais selecionados
+e `dt_cadastro` não apresentaram NUL nem datas zero na inspeção; nomes e
+endereços nunca são emitidos nos logs.
+
+FULL e INCREMENTAL usam paginação por PK. O snapshot de produto sincroniza
+linhas ausentes da origem somente após extração completa e contagem igual,
+na mesma transação PostgreSQL; preserva o watermark numérico para o próximo
+incremental. Endereços são reconciliados via pedidos com `dt_pedido` na
+janela e join pelos índices de `id_pedido`, sem varredura frequente da data
+de cadastro. Alterações em endereços de pedidos mais antigos que a janela
+não são detectadas por essa reconciliação.
+
+Em 2026-09-28, FULL e snapshot de produto carregaram 60.809 linhas cada,
+com contagens iguais, nenhuma remoção no snapshot e watermark `8055794`.
+Os incrementais antes e depois do snapshot não encontraram novos IDs;
+20 registros coincidiram nos cinco campos. O FULL de endereços carregou
+1.196.100 linhas com contagens iguais e watermark `8026373`. O incremental
+não encontrou novos IDs. Na janela padrão de 30 dias havia 18.797 pedidos,
+mas nenhum com endereço nessa tabela; uma reconciliação histórica de 1.825
+dias releu 66 endereços sem avançar o watermark. Trinta registros, incluindo
+dez dessa janela, coincidiram nos dez campos. Totais podem mudar na origem.
 
 ## Próximas fases previstas
 
 6. Continuar gradualmente com as demais entidades após inspecionar colunas,
-   PKs e índices reais; os dois cadastros de usuário, pagamentos, transações
-   e onze referenciais já estão implementados.
+   PKs e índices reais; os dois cadastros de usuário, pagamentos, transações,
+   produtos de pedido, endereços e onze referenciais já estão implementados.
 
 `full`, `incremental` e `--batch-size` estão disponíveis para pedidos e itens Magento
 e para `sa_pedido`, `sa_pedido_evento`, `sa_usuario`, `sa_usuario_balcao`,
-`sa_pedido_pagamento` e `sa_transacao`; `reconcile` e `--days` estão disponíveis
-para essas seis entidades Ativo, com transações somente de forma explícita.
+`sa_pedido_pagamento`, `sa_transacao`, `sa_pedido_produto` e
+`sa_pedido_endereco`. `reconcile` e `--days` estão disponíveis para
+`sa_pedido`, `sa_pedido_evento`, `sa_usuario`, `sa_usuario_balcao`,
+`sa_pedido_pagamento`, `sa_transacao` e `sa_pedido_endereco`, com transações
+somente de forma explícita.
 `snapshot` está disponível para `sa_evento`, `sa_evento_modalidade`,
 `sa_modalidade_categoria`, `sa_pedido_status`, `sa_tamanho_camiseta`,
 `sa_formas_pagamento`, `sa_produto`, `sa_combo`, `sa_cidade`, `sa_estado` e
-`sa_pais`; outras entidades serão
+`sa_pais` e `sa_pedido_produto`; outras entidades serão
 adicionadas gradualmente.
 `BATCH_SIZE=10000` e `RECONCILIATION_DAYS=30` já são validados na configuração.
 
