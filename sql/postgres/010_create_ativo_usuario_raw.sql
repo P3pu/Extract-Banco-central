@@ -1,0 +1,27 @@
+-- Datas zero de dt_nascimento/data_create são preservadas literalmente em TEXT.
+CREATE TABLE IF NOT EXISTS raw.ativo_usuario (
+    id_usuario INTEGER PRIMARY KEY,
+    ds_nome VARCHAR(50) NOT NULL,
+    ds_sobrenome VARCHAR(50),
+    fl_sexo VARCHAR(1),
+    nr_documento VARCHAR(30),
+    dt_nascimento TEXT,
+    ds_email VARCHAR(150),
+    nr_telefone VARCHAR(20),
+    nr_celular VARCHAR(20),
+    ds_cep VARCHAR(10),
+    ds_endereco VARCHAR(100),
+    nr_numero INTEGER,
+    ds_complemento VARCHAR(30),
+    ds_bairro VARCHAR(50),
+    id_cidade INTEGER,
+    id_pais VARCHAR(11),
+    pelotao VARCHAR(50),
+    ds_categoria_balcao TEXT,
+    nm_necessidades_especiais VARCHAR(3),
+    data_create TEXT,
+    data_update TIMESTAMP,
+    _source TEXT NOT NULL,
+    _extracted_at TIMESTAMPTZ NOT NULL,
+    _batch_id UUID NOT NULL
+);

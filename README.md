@@ -2,12 +2,13 @@
 
 Pipeline Python para copiar Magento e Ativo (MySQL) para o PostgreSQL existente
 **Atendimento**, schema **raw**. Implementação atual: **Fases 1 a 5 e parte da
-Fase 6 — infraestrutura, Magento, pedidos, inscrições e quatro referenciais Ativo**.
+Fase 6 — infraestrutura, Magento, pedidos, inscrições, usuários e quatro referenciais Ativo**.
 
 Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.magento_sales_order`, `raw.magento_sales_order_item`, `raw.ativo_pedido` e
 `raw.ativo_pedido_evento`, `raw.ativo_evento`, `raw.ativo_evento_modalidade`,
-`raw.ativo_modalidade_categoria` e `raw.ativo_pedido_status`.
+`raw.ativo_modalidade_categoria`, `raw.ativo_pedido_status`,
+`raw.ativo_usuario` e `raw.ativo_usuario_balcao`.
 A inicialização é transacional e pode ser repetida.
 Não cria databases. A configuração recusa qualquer destino diferente de
 `Atendimento`. Tabelas existentes não são apagadas ou recriadas. A única
@@ -46,6 +47,12 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main full --source ativo --entity pedido_evento --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source ativo --entity pedido_evento
 .venv\Scripts\python -m src.main reconcile --source ativo --entity pedido_evento --days 30
+.venv\Scripts\python -m src.main full --source ativo --entity usuario --batch-size 20000
+.venv\Scripts\python -m src.main incremental --source ativo --entity usuario
+.venv\Scripts\python -m src.main reconcile --source ativo --entity usuario --days 30
+.venv\Scripts\python -m src.main full --source ativo --entity usuario_balcao --batch-size 20000
+.venv\Scripts\python -m src.main incremental --source ativo --entity usuario_balcao
+.venv\Scripts\python -m src.main reconcile --source ativo --entity usuario_balcao --days 30
 .venv\Scripts\python -m src.main snapshot --source ativo --entity evento --batch-size 10000
 .venv\Scripts\python -m src.main snapshot --source ativo --entity evento_modalidade
 .venv\Scripts\python -m src.main snapshot --source ativo --entity modalidade_categoria
@@ -59,10 +66,11 @@ aplica os dois primeiros arquivos de `sql/postgres` em uma transação. Exceçõ
 rollback. `inspect` consulta colunas e índices reais no `information_schema`,
 sem ler registros pessoais. Use-o antes de definir as tabelas RAW de negócio.
 Também é possível passar `--env-file CAMINHO` antes do subcomando.
-Sem `--source`, FULL/incremental executam os dois objetos Magento, `sa_pedido` e
-`sa_pedido_evento`
-em sequência. Com `--source magento` sem `--entity`, executam as duas entidades
-Magento. Cada uma tem seu próprio UUID, lock, transação e watermark. Uma falha interrompe
+Sem `--source`, FULL/incremental executam os dois objetos Magento e as quatro
+entidades Ativo com carga por PK (`sa_pedido`, `sa_pedido_evento`, `sa_usuario`
+e `sa_usuario_balcao`) em sequência. `reconcile` sem `--entity` percorre essas
+quatro entidades Ativo. Com `--source magento` sem `--entity`, executam as duas
+entidades Magento. Cada uma tem seu próprio UUID, lock, transação e watermark. Uma falha interrompe
 a sequência; uma entidade já confirmada não é revertida pela falha da seguinte.
 
 MySQL usa TLS com validação do certificado e uma transação `READ ONLY`, encerrada
@@ -270,14 +278,56 @@ selecionados (10/10, 10/10 e 6/6). As três execuções terminaram em SUCCESS.
 Sem `--entity`, `snapshot` executa os quatro referenciais disponíveis em
 sequência; cada um tem UUID, lock, transação e registro de execução próprios.
 
+## sa_usuario e sa_usuario_balcao — implementados
+
+Os 21 e 10 campos mínimos, respectivamente, foram conferidos no MySQL em
+2026-09-28. As duas PKs são `id_usuario`; a de balcão é INT UNSIGNED e fica
+BIGINT na RAW. `id_pais` em `sa_usuario` é VARCHAR(11), não um inteiro.
+O ENUM `ds_categoria_balcao` permanece texto literal, sem categorização.
+Os campos de data com valores zero são armazenados como TEXT; `data_update`
+de `sa_usuario`, sem datas zero observadas, permanece TIMESTAMP.
+
+FULL e INCREMENTAL percorrem a PK em lotes. A reconciliação pagina inscrições
+de pedidos recentes pelo ID da inscrição, busca os usuários referenciados por
+PK em lotes e faz UPSERT; não varre `data_update`, não agrega inscrições e não
+avança o watermark de usuário. O plano de join usa índices de `dt_pedido` e
+`id_pedido`. Nenhum nome, documento, contato ou endereço aparece nos logs.
+
+O PostgreSQL não admite NUL em texto. Por escolha explícita do usuário,
+caracteres NUL encontrados em campos textuais de `sa_usuario` são substituídos
+por `�` na RAW, sem alterar outros caracteres. O número de substituições é
+registrado, nunca o valor pessoal. A inspeção da origem não encontrou NUL em
+`sa_usuario_balcao`.
+
+Em 2026-09-28, o FULL de `sa_usuario` carregou 3.756.938 linhas com contagens
+iguais, watermark `22573910` e 42 caracteres NUL substituídos. O primeiro
+incremental carregou 5 novos IDs; a reconciliação de 30 dias releu 16.424
+usuários sem avançar o watermark. Outro incremental carregou 4 IDs, chegando
+ao watermark `22573919`. A RAW preservou 12.166 datas zero em
+`dt_nascimento` e 1.192.697 em `data_create` na validação. Uma amostra de 10
+usuários coincidiu nos 21 campos; uma amostra que continha NUL confirmou a
+substituição pontual autorizada. Uma tentativa inicial interrompida pelo NUL
+foi revertida integralmente: nem tabela parcial nem watermark foram mantidos;
+apenas a execução FAILED ficou registrada no controle.
+
+O FULL de `sa_usuario_balcao` carregou 1.517.953 linhas com contagens iguais
+e watermark `1684513`. O incremental seguinte não encontrou novos IDs. A
+reconciliação releu 26.168 usuários sem avançar o watermark; foram detectados
+dois IDs de usuário de balcão referenciados em quatro inscrições recentes,
+mas ausentes do próprio cadastro de origem. A pipeline não inventa linhas para
+essas referências. A amostra de 10 registros coincidiu nos 10 campos; a RAW
+preservou 280.118 datas zero em `dt_nascimento` e 20 em `dt_cadastro` no
+momento da validação. Os totais podem mudar enquanto as origens operam.
+
 ## Próximas fases previstas
 
 6. Continuar gradualmente com as demais entidades após inspecionar colunas,
-   PKs e índices reais; quatro referenciais já estão implementados.
+   PKs e índices reais; os dois cadastros de usuário e quatro referenciais já
+   estão implementados.
 
 `full`, `incremental` e `--batch-size` estão disponíveis para pedidos e itens Magento
-e para `sa_pedido` e `sa_pedido_evento`; `reconcile` e `--days` estão disponíveis
-para as duas entidades Ativo.
+e para `sa_pedido`, `sa_pedido_evento`, `sa_usuario` e `sa_usuario_balcao`;
+`reconcile` e `--days` estão disponíveis para essas quatro entidades Ativo.
 `snapshot` está disponível para `sa_evento`, `sa_evento_modalidade`,
 `sa_modalidade_categoria` e `sa_pedido_status`; outras entidades serão
 adicionadas gradualmente.

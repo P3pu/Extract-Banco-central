@@ -90,17 +90,42 @@ class MySQLReader:
             cursor.execute(query, params)
             return cursor.fetchall()
 
-    def snapshot_bounds(self, contract):
+    def snapshot_bounds(self, contract, count_total=True):
         with self._connection.cursor() as cursor:
             cursor.execute("SELECT @@tx_isolation, @@session.time_zone, @@system_time_zone")
             isolation, zone, system_zone = cursor.fetchone()
             if isolation.upper() != "REPEATABLE-READ" or (zone != "UTC" and not (zone == "SYSTEM" and system_zone == "UTC")):
                 raise ValueError("Isolamento ou fuso do Ativo divergente do contrato")
-            cursor.execute(f"SELECT COUNT(*), MAX(`{contract.PK}`) FROM `{contract.TABLE}`")
+            aggregate = "COUNT(*)" if count_total else "NULL"
+            cursor.execute(f"SELECT {aggregate}, MAX(`{contract.PK}`) FROM `{contract.TABLE}`")
             return cursor.fetchone()
 
     def snapshot_page(self, contract, **kwargs):
         query, params = contract.page_query(**kwargs)
+        with self._connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
+    def recent_user_refs_page(self, column, cutoff, upper_event_id, batch_size, cursor=None):
+        if column not in {"id_usuario", "id_usuario_balcao"} or cutoff is None or batch_size <= 0:
+            raise ValueError("Consulta de referências inválida")
+        where = ["p.dt_pedido >= %s", "pe.id_pedido_evento <= %s",
+                 f"pe.`{column}` IS NOT NULL"]
+        params = [cutoff, upper_event_id]
+        if cursor is not None:
+            where.append("pe.id_pedido_evento > %s")
+            params.append(cursor)
+        params.append(batch_size)
+        query = (f"SELECT pe.id_pedido_evento, pe.`{column}` FROM sa_pedido p FORCE INDEX (dt_pedido) "
+                 "STRAIGHT_JOIN sa_pedido_evento pe FORCE INDEX (id_pedido) "
+                 "ON pe.id_pedido = p.id_pedido "
+                 f"WHERE {' AND '.join(where)} ORDER BY pe.id_pedido_evento LIMIT %s")
+        with self._connection.cursor() as mysql_cursor:
+            mysql_cursor.execute(query, tuple(params))
+            return mysql_cursor.fetchall()
+
+    def usuario_ids(self, contract, ids):
+        query, params = contract.ids_query(ids)
         with self._connection.cursor() as cursor:
             cursor.execute(query, params)
             return cursor.fetchall()

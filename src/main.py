@@ -38,11 +38,12 @@ def parser():
     for mode in ("full", "incremental"):
         load = commands.add_parser(mode, help="Carga de Magento e Ativo")
         load.add_argument("--source", choices=["magento", "ativo"])
-        load.add_argument("--entity", choices=["sales_order", "sales_order_item", "pedido", "pedido_evento"])
+        load.add_argument("--entity", choices=["sales_order", "sales_order_item", "pedido",
+                                               "pedido_evento", "usuario", "usuario_balcao"])
         load.add_argument("--batch-size", type=int)
     reconcile = commands.add_parser("reconcile", help="Reconcilia pedidos e inscrições Ativo")
     reconcile.add_argument("--source", choices=["ativo"], default="ativo")
-    reconcile.add_argument("--entity", choices=["pedido", "pedido_evento"])
+    reconcile.add_argument("--entity", choices=["pedido", "pedido_evento", "usuario", "usuario_balcao"])
     reconcile.add_argument("--batch-size", type=int)
     reconcile.add_argument("--days", type=int)
     snapshot = commands.add_parser("snapshot", help="Sincroniza referências Ativo de forma transacional")
@@ -63,22 +64,30 @@ def main(argv=None):
                 for entity in ([args.entity] if args.entity else ENTITIES):
                     run(settings, args.batch_size, entity=entity)
             elif args.command == "reconcile":
-                from src.pipeline.ativo_pedido import run
-                for entity in ([args.entity] if args.entity else ["pedido", "pedido_evento"]):
+                for entity in ([args.entity] if args.entity else ["pedido", "pedido_evento",
+                                                                  "usuario", "usuario_balcao"]):
+                    if entity in ("pedido", "pedido_evento"):
+                        from src.pipeline.ativo_pedido import run
+                    else:
+                        from src.pipeline.ativo_usuario import run
                     run(settings, "RECONCILIATION", args.batch_size, args.days, entity=entity)
             else:
-                source = args.source or ("ativo" if args.entity in ("pedido", "pedido_evento") else "magento" if args.entity else None)
-                if source == "ativo" and args.entity not in (None, "pedido", "pedido_evento"):
+                ativo_entities = ("pedido", "pedido_evento", "usuario", "usuario_balcao")
+                source = args.source or ("ativo" if args.entity in ativo_entities else "magento" if args.entity else None)
+                if source == "ativo" and args.entity not in (None, *ativo_entities):
                     raise ConfigurationError("Entidade incompatível com Ativo")
-                if source == "magento" and args.entity in ("pedido", "pedido_evento"):
+                if source == "magento" and args.entity in ativo_entities:
                     raise ConfigurationError("Entidade incompatível com Magento")
                 if source != "ativo":
                     from src.pipeline.sales_order import run
                     for entity in ([args.entity] if args.entity else ["sales_order", "sales_order_item"]):
                         run(settings, args.command.upper(), args.batch_size, entity=entity)
                 if source != "magento":
-                    from src.pipeline.ativo_pedido import run
-                    for entity in ([args.entity] if args.entity else ["pedido", "pedido_evento"]):
+                    for entity in ([args.entity] if args.entity else ativo_entities):
+                        if entity in ("pedido", "pedido_evento"):
+                            from src.pipeline.ativo_pedido import run
+                        else:
+                            from src.pipeline.ativo_usuario import run
                         run(settings, args.command.upper(), args.batch_size, entity=entity)
         elif args.command == "init":
             from src.db.postgres import connect, initialize
