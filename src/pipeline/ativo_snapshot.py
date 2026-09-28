@@ -10,6 +10,7 @@ from psycopg import sql
 from src.config.settings import ROOT
 from src.db import mysql, postgres
 from src.loaders import postgres_loader as loader
+from src.pipeline.text_sanitizer import replace_nul
 from src.sources.ativo import evento, referenciais
 
 ENTITIES = {
@@ -28,6 +29,12 @@ ENTITIES = {
                 "014_create_ativo_produto_raw.sql"),
     "combo": (referenciais.combo, 7248319312,
               "015_create_ativo_combo_raw.sql"),
+    "cidade": (referenciais.cidade, 7248319313,
+               "016_create_ativo_cidade_raw.sql"),
+    "estado": (referenciais.estado, 7248319314,
+               "017_create_ativo_estado_raw.sql"),
+    "pais": (referenciais.pais, 7248319315,
+             "018_create_ativo_pais_raw.sql"),
 }
 
 
@@ -49,8 +56,11 @@ def load(connection, reader, batch_size, batch_id, progress, entity="evento"):
         if not rows:
             break
         progress["rows_extracted"] += len(rows)
+        cleaned, nul_count = replace_nul(rows)
+        if nul_count:
+            progress["nul_replacements"] = progress.get("nul_replacements", 0) + nul_count
         progress["rows_loaded"] += loader.upsert(
-            connection, rows, batch_id, target, columns=contract.COLUMNS,
+            connection, cleaned, batch_id, target, columns=contract.COLUMNS,
             pk=contract.PK, source="ativo")
         cursor = rows[-1][0]
         log("batch", entity=entity, batch_id=batch_id, mode="SNAPSHOT", **progress)

@@ -1,0 +1,22 @@
+CREATE TABLE IF NOT EXISTS raw.ativo_cidade (
+    id INTEGER PRIMARY KEY,
+    id_pais INTEGER NOT NULL,
+    id_estado INTEGER NOT NULL,
+    ds_estado VARCHAR(200),
+    id_cidade INTEGER NOT NULL,
+    ds_cidade VARCHAR(50) NOT NULL,
+    ds_cidade_en VARCHAR(50) NOT NULL,
+    ds_cidade_es VARCHAR(50) NOT NULL,
+    nr_cep VARCHAR(10) NOT NULL,
+    latitude VARCHAR(12) NOT NULL,
+    longitude VARCHAR(12) NOT NULL,
+    nr_ibge INTEGER NOT NULL,
+    id_situacao_cadastro INTEGER NOT NULL,
+    id_pais_origem INTEGER NOT NULL,
+    atualizado INTEGER NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    ativo INTEGER NOT NULL,
+    _source TEXT NOT NULL,
+    _extracted_at TIMESTAMPTZ NOT NULL,
+    _batch_id UUID NOT NULL
+);

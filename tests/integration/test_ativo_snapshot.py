@@ -54,7 +54,10 @@ def test_evento_temp_table_preserves_empty_dates_and_rollback():
                                       referenciais.tamanho_camiseta,
                                       referenciais.formas_pagamento,
                                       referenciais.produto,
-                                      referenciais.combo])
+                                      referenciais.combo,
+                                      referenciais.cidade,
+                                      referenciais.estado,
+                                      referenciais.pais])
 def test_reference_source_schema_and_pagination(contract):
     settings = Settings.load()
     with mysql.connect(settings, "ativo") as reader:
@@ -80,6 +83,18 @@ def test_reference_source_schema_and_pagination(contract):
      {"id_produto": 1, "ds_titulo": "teste"}),
     (referenciais.combo, "015_create_ativo_combo_raw.sql",
      {"id_combo": 5, "ds_titulo": "teste"}),
+    (referenciais.cidade, "016_create_ativo_cidade_raw.sql",
+     {"id": 1, "id_pais": 1, "id_estado": 1, "id_cidade": 1,
+      "ds_cidade": "teste", "ds_cidade_en": "test", "ds_cidade_es": "prueba",
+      "nr_cep": "12345", "latitude": "0", "longitude": "0", "nr_ibge": 0,
+      "id_situacao_cadastro": 1, "id_pais_origem": 1, "atualizado": 0,
+      "status": "ativo", "ativo": 1}),
+    (referenciais.estado, "017_create_ativo_estado_raw.sql",
+     {"id": 1, "id_pais": 1, "id_estado": 1, "ds_estado": "teste",
+      "ds_estado_en": "test", "ds_sigla": "TS"}),
+    (referenciais.pais, "018_create_ativo_pais_raw.sql",
+     {"id_pais": 1, "ds_pais": "teste", "ds_pais_en": "test",
+      "ds_pais_es": "prueba"}),
 ])
 def test_reference_temporary_copy(contract, ddl, values):
     from uuid import uuid4

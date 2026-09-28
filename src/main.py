@@ -51,7 +51,7 @@ def parser():
     snapshot.add_argument("--entity", choices=["evento", "evento_modalidade",
                                               "modalidade_categoria", "pedido_status",
                                               "tamanho_camiseta", "formas_pagamento",
-                                              "produto", "combo"])
+                                              "produto", "combo", "cidade", "estado", "pais"])
     snapshot.add_argument("--batch-size", type=int)
     return root
 

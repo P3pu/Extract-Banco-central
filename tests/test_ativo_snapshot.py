@@ -63,6 +63,23 @@ def test_snapshot_count_mismatch_does_not_delete():
     assert not any("DELETE FROM" in str(call) for call in conn.execute.call_args_list)
 
 
+def test_snapshot_replaces_only_nul_and_counts_replacements():
+    conn, reader = MagicMock(), MagicMock()
+    reader.snapshot_bounds.return_value = (1, 1)
+    row = [None] * len(referenciais.cidade.COLUMNS)
+    row[0], row[3] = 1, "A\x00B"
+    reader.snapshot_page.side_effect = [[tuple(row)], []]
+    conn.execute.side_effect = [MagicMock(), MagicMock(rowcount=0),
+                                MagicMock(fetchone=MagicMock(return_value=(1,)))]
+    progress = {"rows_extracted": 0, "rows_loaded": 0}
+    with patch.object(ativo_snapshot.loader, "prepare"), \
+         patch.object(ativo_snapshot.loader, "upsert", return_value=1) as upsert:
+        ativo_snapshot.load(conn, reader, 10, uuid4(), progress, entity="cidade")
+    assert upsert.call_args.args[1][0][3] == "A\ufffdB"
+    assert row[3] == "A\x00B"
+    assert progress == {"rows_extracted": 1, "rows_loaded": 1, "nul_replacements": 1}
+
+
 def test_snapshot_cli_routes_evento():
     with patch("src.main.Settings.load"), patch("src.pipeline.ativo_snapshot.run") as run:
         assert main(["snapshot"]) == 0
@@ -80,7 +97,10 @@ def test_snapshot_cli_routes_evento():
                                       referenciais.tamanho_camiseta,
                                       referenciais.formas_pagamento,
                                       referenciais.produto,
-                                      referenciais.combo])
+                                      referenciais.combo,
+                                      referenciais.cidade,
+                                      referenciais.estado,
+                                      referenciais.pais])
 def test_reference_contracts_validate_schema_and_keyset(contract):
     columns = [{"COLUMN_NAME": name, "COLUMN_TYPE": spec[0],
                 "IS_NULLABLE": "YES" if spec[2] else "NO"}
@@ -109,6 +129,15 @@ def test_tamanho_all_source_columns_and_unsigned_ids():
     assert referenciais.tamanho_camiseta.FIELDS["nr_peso"][1] == "NUMERIC(10,2)"
     assert referenciais.produto.FIELDS["id_produto"][1] == "BIGINT"
     assert referenciais.combo.FIELDS["id_combo"][1] == "BIGINT"
+
+
+def test_geography_uses_physical_primary_keys_and_original_fields():
+    assert referenciais.cidade.PK == "id"
+    assert referenciais.estado.PK == "id"
+    assert referenciais.pais.PK == "id_pais"
+    assert len(referenciais.cidade.COLUMNS) == 17
+    assert len(referenciais.estado.COLUMNS) == 7
+    assert len(referenciais.pais.COLUMNS) == 9
 
 
 @pytest.mark.parametrize("failure", [False, True])

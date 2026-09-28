@@ -99,3 +99,51 @@ combo = SnapshotReference(
         "id_combo": ("int(10) unsigned", "BIGINT", False),
         "ds_titulo": ("varchar(60)", "VARCHAR(60)", False),
     })
+
+cidade = SnapshotReference(
+    TABLE="sa_cidade", PK="id",
+    FIELDS={
+        "id": ("int(11)", "INTEGER", False),
+        "id_pais": ("int(11)", "INTEGER", False),
+        "id_estado": ("int(11)", "INTEGER", False),
+        "ds_estado": ("varchar(200)", "VARCHAR(200)", True),
+        "id_cidade": ("int(11)", "INTEGER", False),
+        "ds_cidade": ("varchar(50)", "VARCHAR(50)", False),
+        "ds_cidade_en": ("varchar(50)", "VARCHAR(50)", False),
+        "ds_cidade_es": ("varchar(50)", "VARCHAR(50)", False),
+        "nr_cep": ("varchar(10)", "VARCHAR(10)", False),
+        "latitude": ("varchar(12)", "VARCHAR(12)", False),
+        "longitude": ("varchar(12)", "VARCHAR(12)", False),
+        "nr_ibge": ("int(10)", "INTEGER", False),
+        "id_situacao_cadastro": ("int(11)", "INTEGER", False),
+        "id_pais_origem": ("int(11)", "INTEGER", False),
+        "atualizado": ("int(11)", "INTEGER", False),
+        "status": ("varchar(50)", "VARCHAR(50)", False),
+        "ativo": ("int(11)", "INTEGER", False),
+    })
+
+estado = SnapshotReference(
+    TABLE="sa_estado", PK="id",
+    FIELDS={
+        "id": ("int(11)", "INTEGER", False),
+        "id_pais": ("int(11)", "INTEGER", False),
+        "id_estado": ("int(11)", "INTEGER", False),
+        "ds_estado": ("varchar(100)", "VARCHAR(100)", False),
+        "ds_estado_en": ("varchar(100)", "VARCHAR(100)", False),
+        "ds_sigla": ("varchar(5)", "VARCHAR(5)", False),
+        "id_situacao_cadastro": ("int(11)", "INTEGER", True),
+    })
+
+pais = SnapshotReference(
+    TABLE="sa_pais", PK="id_pais",
+    FIELDS={
+        "id_pais": ("int(11)", "INTEGER", False),
+        "ds_pais": ("varchar(50)", "VARCHAR(50)", False),
+        "ds_pais_en": ("varchar(100)", "VARCHAR(100)", False),
+        "ds_pais_es": ("varchar(100)", "VARCHAR(100)", False),
+        "ds_sigla": ("varchar(10)", "VARCHAR(10)", True),
+        "id_continente": ("int(11)", "INTEGER", True),
+        "latitude": ("varchar(50)", "VARCHAR(50)", True),
+        "longitude": ("varchar(50)", "VARCHAR(50)", True),
+        "id_situacao_cadastro": ("int(11)", "INTEGER", True),
+    })

@@ -2,14 +2,15 @@
 
 Pipeline Python para copiar Magento e Ativo (MySQL) para o PostgreSQL existente
 **Atendimento**, schema **raw**. Implementação atual: **Fases 1 a 5 e parte da
-Fase 6 — infraestrutura, Magento, pedidos, inscrições, usuários e oito referenciais Ativo**.
+Fase 6 — infraestrutura, Magento, pedidos, inscrições, usuários e onze referenciais Ativo**.
 
 Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.magento_sales_order`, `raw.magento_sales_order_item`, `raw.ativo_pedido` e
 `raw.ativo_pedido_evento`, `raw.ativo_evento`, `raw.ativo_evento_modalidade`,
 `raw.ativo_modalidade_categoria`, `raw.ativo_pedido_status`,
 `raw.ativo_usuario`, `raw.ativo_usuario_balcao`, `raw.ativo_tamanho_camiseta`,
-`raw.ativo_formas_pagamento`, `raw.ativo_produto` e `raw.ativo_combo`.
+`raw.ativo_formas_pagamento`, `raw.ativo_produto`, `raw.ativo_combo`,
+`raw.ativo_cidade`, `raw.ativo_estado` e `raw.ativo_pais`.
 A inicialização é transacional e pode ser repetida.
 Não cria databases. A configuração recusa qualquer destino diferente de
 `Atendimento`. Tabelas existentes não são apagadas ou recriadas. A única
@@ -62,6 +63,9 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main snapshot --source ativo --entity formas_pagamento
 .venv\Scripts\python -m src.main snapshot --source ativo --entity produto
 .venv\Scripts\python -m src.main snapshot --source ativo --entity combo
+.venv\Scripts\python -m src.main snapshot --source ativo --entity cidade
+.venv\Scripts\python -m src.main snapshot --source ativo --entity estado
+.venv\Scripts\python -m src.main snapshot --source ativo --entity pais
 .venv\Scripts\python -m src.main snapshot
 .venv\Scripts\python -m pytest -q
 ```
@@ -280,7 +284,7 @@ permanece TIMESTAMP. `vl_kit` fica NUMERIC(10,2), sem cálculo.
 Os snapshots carregaram respectivamente 40.838, 161.374 e 6 linhas, com
 contagens iguais às origens. As amostras coincidiram em todos os campos
 selecionados (10/10, 10/10 e 6/6). As três execuções terminaram em SUCCESS.
-Sem `--entity`, `snapshot` executa os oito referenciais disponíveis em
+Sem `--entity`, `snapshot` executa os onze referenciais disponíveis em
 sequência; cada um tem UUID, lock, transação e registro de execução próprios.
 
 ## Tamanho, formas de pagamento, produto e combo — snapshots implementados
@@ -295,6 +299,21 @@ Em 2026-09-28, os snapshots de `sa_tamanho_camiseta`,
 1.174, 81, 931 e 1.305 linhas. Origem e RAW tiveram contagens iguais, e
 amostras de 10 registros coincidiram em todos os campos selecionados nas
 quatro tabelas. Os totais são do momento da validação.
+
+## Cidade, estado e país — snapshots implementados
+
+Os contratos preservam todos os 17, 7 e 9 campos originais, respectivamente.
+Em `sa_cidade` e `sa_estado`, a PK física é `id`; `id_cidade` e `id_estado`
+são apenas campos de origem e não foram usados como chave de UPSERT.
+Nenhuma regra geográfica é aplicada nesta camada RAW.
+
+Em 2026-09-28, as cargas continham 47.378 cidades, 34.465 estados e 246
+países, com contagens iguais na origem e no destino. Amostras de 15 cidades,
+15 estados e 10 países coincidiram em todos os campos, incluindo cinco linhas
+com NUL em cada uma das duas primeiras tabelas. Seguindo a escolha de
+substituição por `�`, foram trocados somente 46 caracteres NUL em cidades e
+48 em estados. A contagem das substituições consta nos logs, sem valores de
+origem.
 
 ## sa_usuario e sa_usuario_balcao — implementados
 
@@ -340,7 +359,7 @@ momento da validação. Os totais podem mudar enquanto as origens operam.
 ## Próximas fases previstas
 
 6. Continuar gradualmente com as demais entidades após inspecionar colunas,
-   PKs e índices reais; os dois cadastros de usuário e oito referenciais já
+   PKs e índices reais; os dois cadastros de usuário e onze referenciais já
    estão implementados.
 
 `full`, `incremental` e `--batch-size` estão disponíveis para pedidos e itens Magento
@@ -348,7 +367,8 @@ e para `sa_pedido`, `sa_pedido_evento`, `sa_usuario` e `sa_usuario_balcao`;
 `reconcile` e `--days` estão disponíveis para essas quatro entidades Ativo.
 `snapshot` está disponível para `sa_evento`, `sa_evento_modalidade`,
 `sa_modalidade_categoria`, `sa_pedido_status`, `sa_tamanho_camiseta`,
-`sa_formas_pagamento`, `sa_produto` e `sa_combo`; outras entidades serão
+`sa_formas_pagamento`, `sa_produto`, `sa_combo`, `sa_cidade`, `sa_estado` e
+`sa_pais`; outras entidades serão
 adicionadas gradualmente.
 `BATCH_SIZE=10000` e `RECONCILIATION_DAYS=30` já são validados na configuração.
 

@@ -10,6 +10,7 @@ from psycopg import sql
 from src.config.settings import ROOT
 from src.db import mysql, postgres
 from src.loaders import postgres_loader as loader
+from src.pipeline.text_sanitizer import replace_nul
 from src.sources.ativo import pedido, pedido_evento, usuarios
 
 ENTITIES = {
@@ -22,23 +23,6 @@ ENTITIES = {
 def log(event, entity, **fields):
     print(json.dumps({"event": event, "at": datetime.now(timezone.utc).isoformat(),
                       "source": "ativo", "table": f"sa_{entity}", **fields}, default=str), flush=True)
-
-
-def replace_nul(rows):
-    """PostgreSQL TEXT recusa NUL; U+FFFD preserva o tamanho de VARCHAR."""
-    result = []
-    replacements = 0
-    for row in rows:
-        changed = False
-        values = []
-        for value in row:
-            if isinstance(value, str) and "\x00" in value:
-                replacements += value.count("\x00")
-                value = value.replace("\x00", "\ufffd")
-                changed = True
-            values.append(value)
-        result.append(tuple(values) if changed else row)
-    return result, replacements
 
 
 def load(connection, reader, mode, batch_size, batch_id, old_id, days, progress, entity):
