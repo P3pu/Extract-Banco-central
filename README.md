@@ -3,7 +3,7 @@
 Pipeline Python para copiar Magento e Ativo (MySQL) para o PostgreSQL existente
 **Atendimento**, schema **raw**. Implementação atual: **Fases 1 a 5 e parte da
 Fase 6 — infraestrutura, Magento, pedidos, inscrições, usuários, pagamentos,
-transações, produtos de pedido, endereços e onze referenciais Ativo**.
+transações, produtos de pedido, endereços, cupons individuais e onze referenciais Ativo**.
 
 Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.magento_sales_order`, `raw.magento_sales_order_item`, `raw.ativo_pedido` e
@@ -13,7 +13,8 @@ Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.ativo_formas_pagamento`, `raw.ativo_produto`, `raw.ativo_combo`,
 `raw.ativo_cidade`, `raw.ativo_estado`, `raw.ativo_pais`,
 `raw.ativo_pedido_pagamento`, `raw.ativo_transacao`,
-`raw.ativo_pedido_produto` e `raw.ativo_pedido_endereco`.
+`raw.ativo_pedido_produto`, `raw.ativo_pedido_endereco` e
+`raw.ativo_cupom_desconto_item`.
 A inicialização é transacional e pode ser repetida.
 Não cria databases. A configuração recusa qualquer destino diferente de
 `Atendimento`. Tabelas existentes não são apagadas ou recriadas. A única
@@ -70,6 +71,8 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main full --source ativo --entity pedido_endereco --batch-size 20000
 .venv\Scripts\python -m src.main incremental --source ativo --entity pedido_endereco
 .venv\Scripts\python -m src.main reconcile --source ativo --entity pedido_endereco --days 30
+.venv\Scripts\python -m src.main reconcile --source ativo --entity cupom_desconto_item --batch-size 10000
+.venv\Scripts\python -m src.main incremental --source ativo --entity cupom_desconto_item
 .venv\Scripts\python -m src.main snapshot --source ativo --entity evento --batch-size 10000
 .venv\Scripts\python -m src.main snapshot --source ativo --entity evento_modalidade
 .venv\Scripts\python -m src.main snapshot --source ativo --entity modalidade_categoria
@@ -90,10 +93,12 @@ aplica os dois primeiros arquivos de `sql/postgres` em uma transação. Exceçõ
 rollback. `inspect` consulta colunas e índices reais no `information_schema`,
 sem ler registros pessoais. Use-o antes de definir as tabelas RAW de negócio.
 Também é possível passar `--env-file CAMINHO` antes do subcomando.
-Sem `--source`, FULL/incremental executam os dois objetos Magento e as oito
+Sem `--source`, FULL executa os dois objetos Magento e as oito
 entidades Ativo com carga por PK (`sa_pedido`, `sa_pedido_evento`, `sa_usuario`,
 `sa_usuario_balcao`, `sa_pedido_pagamento`, `sa_transacao`,
 `sa_pedido_produto` e `sa_pedido_endereco`) em sequência.
+O incremental padrão inclui também `sa_cupom_desconto_item` após essas entidades;
+antes de executá-lo, faça a carga seletiva explícita de cupons com `reconcile`.
 `reconcile` sem `--entity` percorre `sa_pedido`, `sa_pedido_evento`,
 `sa_usuario`, `sa_usuario_balcao`, `sa_pedido_pagamento` e
 `sa_pedido_endereco`; `sa_transacao` só é reconciliada quando solicitada
@@ -434,19 +439,50 @@ mas nenhum com endereço nessa tabela; uma reconciliação histórica de 1.825
 dias releu 66 endereços sem avançar o watermark. Trinta registros, incluindo
 dez dessa janela, coincidiram nos dez campos. Totais podem mudar na origem.
 
+## Cupons individuais Ativo — carga seletiva
+
+`sa_cupom_desconto_item` tem cerca de 29,3 milhões de linhas e não é carregada
+integralmente nesta etapa. O primeiro `reconcile --source ativo --entity
+cupom_desconto_item` reúne e deduplica os IDs referenciados por
+`raw.ativo_pedido.id_cupom_desconto_item` e
+`raw.ativo_pedido_evento.id_cupom_individual`, consulta esses IDs pela PK no
+MySQL e faz UPSERT na RAW. A operação é idempotente e pode ser repetida para
+capturar referências novas ou atualizações de cupons já referenciados. Não
+aceita `--days` e fica fora do `reconcile` padrão para evitar releituras
+custosas. `full` não está disponível para cupons.
+
+Após a carga seletiva, `incremental --source ativo --entity
+cupom_desconto_item` lê todos os IDs de origem acima do watermark da PK,
+inclusive os que ainda não aparecem em pedidos. O incremental não detecta
+alterações em IDs antigos; rode a reconciliação explícita conforme a necessidade.
+O watermark inicial só avança após a carga seletiva confirmar; reconciliações
+posteriores não o avançam. Ambas usam lotes, transação e controle de execução.
+As datas MySQL são preservadas como texto para comportar `0000-00-00` sem perda.
+
+Na carga de 2026-09-29, havia 784.754 IDs distintos referenciados: 781.853
+cupons localizados e carregados na RAW; 2.901 IDs não existiam na visão da
+origem e não foram fabricados. O watermark ficou em `94036505` e o incremental
+seguinte não encontrou IDs novos. Uma amostra de 20 linhas coincidiu nos nove
+campos. Portanto, a RAW de cupons **não representa o histórico completo** da
+origem; uma decisão de ampliar a cobertura exige avaliar tempo e armazenamento.
+Essas contagens podem mudar.
+
 ## Próximas fases previstas
 
 6. Continuar gradualmente com as demais entidades após inspecionar colunas,
    PKs e índices reais; os dois cadastros de usuário, pagamentos, transações,
-   produtos de pedido, endereços e onze referenciais já estão implementados.
+   produtos de pedido, endereços, cupons individuais e onze referenciais já
+   estão implementados.
 
 `full`, `incremental` e `--batch-size` estão disponíveis para pedidos e itens Magento
 e para `sa_pedido`, `sa_pedido_evento`, `sa_usuario`, `sa_usuario_balcao`,
 `sa_pedido_pagamento`, `sa_transacao`, `sa_pedido_produto` e
-`sa_pedido_endereco`. `reconcile` e `--days` estão disponíveis para
+`sa_pedido_endereco`. O incremental também aceita `sa_cupom_desconto_item` após
+sua carga seletiva. `reconcile` e `--days` estão disponíveis para
 `sa_pedido`, `sa_pedido_evento`, `sa_usuario`, `sa_usuario_balcao`,
 `sa_pedido_pagamento`, `sa_transacao` e `sa_pedido_endereco`, com transações
 somente de forma explícita.
+Para cupons individuais, `reconcile` é explícito e não aceita `--days`.
 `snapshot` está disponível para `sa_evento`, `sa_evento_modalidade`,
 `sa_modalidade_categoria`, `sa_pedido_status`, `sa_tamanho_camiseta`,
 `sa_formas_pagamento`, `sa_produto`, `sa_combo`, `sa_cidade`, `sa_estado` e

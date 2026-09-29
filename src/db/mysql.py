@@ -118,6 +118,12 @@ class MySQLReader:
             cursor.execute(query, params)
             return cursor.fetchall()
 
+    def cupom_ids(self, contract, ids, upper_id):
+        query, params = contract.ids_query(ids, upper_id)
+        with self._connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
     def recent_user_refs_page(self, column, cutoff, upper_event_id, batch_size, cursor=None):
         if column not in {"id_usuario", "id_usuario_balcao"} or cutoff is None or batch_size <= 0:
             raise ValueError("Consulta de referências inválida")

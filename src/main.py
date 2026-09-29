@@ -38,15 +38,18 @@ def parser():
     for mode in ("full", "incremental"):
         load = commands.add_parser(mode, help="Carga de Magento e Ativo")
         load.add_argument("--source", choices=["magento", "ativo"])
-        load.add_argument("--entity", choices=["sales_order", "sales_order_item", "pedido",
-                                               "pedido_evento", "usuario", "usuario_balcao",
-                                               "pedido_pagamento", "transacao",
-                                               "pedido_produto", "pedido_endereco"])
+        entities = ["sales_order", "sales_order_item", "pedido", "pedido_evento",
+                    "usuario", "usuario_balcao", "pedido_pagamento", "transacao",
+                    "pedido_produto", "pedido_endereco"]
+        if mode == "incremental":
+            entities.append("cupom_desconto_item")
+        load.add_argument("--entity", choices=entities)
         load.add_argument("--batch-size", type=int)
-    reconcile = commands.add_parser("reconcile", help="Reconcilia pedidos e inscrições Ativo")
+    reconcile = commands.add_parser("reconcile", help="Reconcilia entidades Ativo")
     reconcile.add_argument("--source", choices=["ativo"], default="ativo")
     reconcile.add_argument("--entity", choices=["pedido", "pedido_evento", "usuario", "usuario_balcao",
-                                                "pedido_pagamento", "transacao", "pedido_endereco"])
+                                                "pedido_pagamento", "transacao", "pedido_endereco",
+                                                "cupom_desconto_item"])
     reconcile.add_argument("--batch-size", type=int)
     reconcile.add_argument("--days", type=int)
     snapshot = commands.add_parser("snapshot", help="Sincroniza referências Ativo de forma transacional")
@@ -77,6 +80,12 @@ def main(argv=None):
                 for entity in ([args.entity] if args.entity else ["pedido", "pedido_evento",
                                                                   "usuario", "usuario_balcao",
                                                                   "pedido_pagamento", "pedido_endereco"]):
+                    if entity == "cupom_desconto_item":
+                        if args.days is not None:
+                            raise ConfigurationError("--days não se aplica à reconciliação por referências de cupons")
+                        from src.pipeline.ativo_cupom import run
+                        run(settings, "RECONCILIATION", args.batch_size)
+                        continue
                     if entity in ("pedido", "pedido_evento"):
                         from src.pipeline.ativo_pedido import run
                     elif entity in ("usuario", "usuario_balcao"):
@@ -89,7 +98,8 @@ def main(argv=None):
             else:
                 ativo_entities = ("pedido", "pedido_evento", "usuario", "usuario_balcao",
                                   "pedido_pagamento", "transacao", "pedido_produto",
-                                  "pedido_endereco")
+                                  "pedido_endereco") + (("cupom_desconto_item",)
+                                                         if args.command == "incremental" else ())
                 source = args.source or ("ativo" if args.entity in ativo_entities else "magento" if args.entity else None)
                 if source == "ativo" and args.entity not in (None, *ativo_entities):
                     raise ConfigurationError("Entidade incompatível com Ativo")
@@ -101,6 +111,10 @@ def main(argv=None):
                         run(settings, args.command.upper(), args.batch_size, entity=entity)
                 if source != "magento":
                     for entity in ([args.entity] if args.entity else ativo_entities):
+                        if entity == "cupom_desconto_item":
+                            from src.pipeline.ativo_cupom import run
+                            run(settings, args.command.upper(), args.batch_size)
+                            continue
                         if entity in ("pedido", "pedido_evento"):
                             from src.pipeline.ativo_pedido import run
                         elif entity in ("usuario", "usuario_balcao"):
