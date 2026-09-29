@@ -38,7 +38,7 @@ def parser():
     for mode in ("full", "incremental"):
         load = commands.add_parser(mode, help="Carga de Magento e Ativo")
         load.add_argument("--source", choices=["magento", "ativo"])
-        entities = ["sales_order", "sales_order_item", "product", "product_varchar",
+        entities = ["sales_order", "sales_order_item", "product", "customer", "product_varchar",
                     "product_int", "product_datetime",
                     "pedido", "pedido_evento",
                     "usuario", "usuario_balcao", "pedido_pagamento", "transacao",
@@ -137,7 +137,7 @@ def main(argv=None):
                 if source != "ativo":
                     from src.pipeline.sales_order import run
                     for entity in ([args.entity] if args.entity else ["sales_order", "sales_order_item",
-                                                                  "product", "product_varchar", "product_int",
+                                                                  "product", "customer", "product_varchar", "product_int",
                                                                   "product_datetime"]):
                         if entity == "product_varchar":
                             from src.pipeline.magento_product_varchar import run as run_varchar

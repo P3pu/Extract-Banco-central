@@ -2,14 +2,14 @@
 
 Pipeline Python para copiar Magento e Ativo (MySQL) para o PostgreSQL existente
 **Atendimento**, schema **raw**. Implementação atual: **Fases 1 a 5 e parte da
-Fase 6 — infraestrutura, pedidos e produtos Magento, pedidos e inscrições Ativo, usuários, pagamentos,
+Fase 6 — infraestrutura, pedidos, produtos e clientes Magento, pedidos e inscrições Ativo, usuários, pagamentos,
 transações, produtos de pedido, endereços, cupons individuais e onze referenciais Ativo**.
 
 Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.magento_sales_order`, `raw.magento_sales_order_item`, `raw.magento_product`,
 `raw.magento_product_varchar`, `raw.magento_product_int`,
 `raw.magento_product_datetime`, `raw.magento_eav_attribute`,
-`raw.magento_option_value`,
+`raw.magento_option_value`, `raw.magento_customer`,
 `raw.ativo_pedido` e
 `raw.ativo_pedido_evento`, `raw.ativo_evento`, `raw.ativo_evento_modalidade`,
 `raw.ativo_modalidade_categoria`, `raw.ativo_pedido_status`,
@@ -53,6 +53,8 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main incremental --source magento --entity sales_order_item
 .venv\Scripts\python -m src.main full --source magento --entity product --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source magento --entity product
+.venv\Scripts\python -m src.main full --source magento --entity customer --batch-size 10000
+.venv\Scripts\python -m src.main incremental --source magento --entity customer
 .venv\Scripts\python -m src.main full --source magento --entity product_varchar --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source magento --entity product_varchar
 .venv\Scripts\python -m src.main snapshot --source magento --entity product_varchar
@@ -110,7 +112,7 @@ aplica os dois primeiros arquivos de `sql/postgres` em uma transação. Exceçõ
 rollback. `inspect` consulta colunas e índices reais no `information_schema`,
 sem ler registros pessoais. Use-o antes de definir as tabelas RAW de negócio.
 Também é possível passar `--env-file CAMINHO` antes do subcomando.
-Sem `--source`, FULL executa os seis objetos Magento e as oito
+Sem `--source`, FULL executa sete objetos Magento e as oito
 entidades Ativo com carga por PK (`sa_pedido`, `sa_pedido_evento`, `sa_usuario`,
 `sa_usuario_balcao`, `sa_pedido_pagamento`, `sa_transacao`,
 `sa_pedido_produto` e `sa_pedido_endereco`) em sequência.
@@ -123,7 +125,7 @@ explicitamente, porque a origem não tem índice nas colunas de data.
 `snapshot` sem `--source` percorre os onze referenciais Ativo e `sa_pedido_produto`;
 com `--source magento`, sincroniza os EAV varchar, int e datetime de produtos,
 os seis metadados em `eav_attribute` e todos os valores de opções.
-Com `--source magento` em FULL/incremental sem `--entity`, executam os seis
+Com `--source magento` em FULL/incremental sem `--entity`, executam-se as sete
 entidades Magento. Cada uma tem seu próprio UUID, lock, transação e watermark. Uma falha interrompe
 a sequência; uma entidade já confirmada não é revertida pela falha da seguinte.
 
@@ -360,6 +362,29 @@ são substituídos por `�`, sem emitir valores nos logs.
 Em 2026-09-29, foram carregadas 2.370 linhas, abrangendo 2.350 opções e
 dois `store_id`. Uma amostra de 21 linhas coincidiu nos quatro campos.
 O segundo snapshot manteve 2.370 linhas e removeu zero. Totais podem mudar.
+
+## customer_entity — implementado
+
+`raw.magento_customer` copia somente os dez campos pedidos, sem idade, nome
+completo, status de assinante ou ajuste de gênero. Dados pessoais não são
+emitidos em logs nem em testes. `entity_id` é a PK; `dob` e `created_at` são
+texto para preservar datas com ano zero existentes na origem MySQL.
+NUL em texto, caso apareça, é substituído por `�`, conforme decisão do usuário.
+
+FULL e INCREMENTAL paginam pela PK em transação MySQL somente leitura. A
+origem não tem índice em `updated_at`, então o incremental percorre a PK e
+seleciona registros atualizados desde o watermark com sobreposição de cinco
+minutos. Isso detecta alterações em IDs antigos, mas exclusões físicas não
+são detectadas. Contagens FULL e destino são validados antes do commit.
+Em 2026-09-29, a inspeção agregada encontrou cerca de 1,2 milhão de linhas,
+11.845 `created_at` zero, ao menos um `dob` com ano zero e nenhum NUL nos
+campos textuais selecionados. Uma primeira tentativa FULL foi revertida ao
+encontrar a data inválida; a definição textual corrige essa incompatibilidade.
+O FULL confirmado carregou 1.197.016 linhas com contagens iguais. O incremental
+seguinte releu 84 registros na janela de sobreposição e concluiu com sucesso;
+a RAW tinha 1.197.021 linhas após novos cadastros. Uma amostra de 22 linhas,
+incluindo datas com ano zero, coincidiu em todos os dez campos. Totais mudam
+enquanto a origem está em operação.
 
 ## sa_pedido — implementado
 
@@ -619,12 +644,12 @@ Essas contagens podem mudar.
 6. Continuar gradualmente com as demais entidades após inspecionar colunas,
    PKs e índices reais; os dois cadastros de usuário, pagamentos, transações,
    produtos de pedido, endereços, cupons individuais, produto e EAV
-   varchar/int/datetime, metadados e valores de opções EAV Magento e onze
-   referenciais já estão implementados. A próxima tabela Magento prevista é
-   `customer_entity`.
+   varchar/int/datetime, metadados e valores de opções EAV Magento, clientes
+   Magento e onze referenciais já estão implementados. A próxima tabela Magento
+   prevista é `customer_address_entity`.
 
 `full`, `incremental` e `--batch-size` estão disponíveis para pedidos, itens,
-produtos e EAV varchar/int/datetime Magento, e para `sa_pedido`, `sa_pedido_evento`,
+produtos, clientes e EAV varchar/int/datetime Magento, e para `sa_pedido`, `sa_pedido_evento`,
 `sa_usuario`, `sa_usuario_balcao`,
 `sa_pedido_pagamento`, `sa_transacao`, `sa_pedido_produto` e
 `sa_pedido_endereco`. O incremental também aceita `sa_cupom_desconto_item` após

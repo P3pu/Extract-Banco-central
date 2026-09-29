@@ -8,12 +8,14 @@ from psycopg import sql
 from src.config.settings import ROOT
 from src.db import mysql, postgres
 from src.loaders import postgres_loader as loader
-from src.sources.magento import product, sales_order, sales_order_item
+from src.pipeline.text_sanitizer import replace_nul
+from src.sources.magento import customer, product, sales_order, sales_order_item
 
 ENTITIES = {
     "sales_order": (sales_order, 7248319201, "003_create_magento_raw.sql"),
     "sales_order_item": (sales_order_item, 7248319202, "003b_create_magento_sales_order_item.sql"),
     "product": (product, 7248319203, "024_create_magento_product_raw.sql"),
+    "customer": (customer, 7248319209, "030_create_magento_customer_raw.sql"),
 }
 
 def log(event, **fields):
@@ -35,6 +37,10 @@ def load(connection, reader, mode, batch_size, batch_id, old, progress, entity="
                                       upper_time=upper_time, watermark=old, cursor=cursor)
         if not rows:
             break
+        if entity == "customer":
+            rows, replacements = replace_nul(rows)
+            if replacements:
+                progress["nul_replacements"] = progress.get("nul_replacements", 0) + replacements
         progress["rows_extracted"] += len(rows)
         progress["rows_loaded"] += loader.upsert(connection, rows, batch_id, target,
                                                  columns=contract.COLUMNS, pk=contract.PK)

@@ -15,7 +15,7 @@ def test_without_entity_runs_magento_tables():
          patch("src.pipeline.magento_product_datetime.run") as run_datetime:
         assert main(["incremental", "--source", "magento"]) == 0
     assert [c.kwargs["entity"] for c in run.call_args_list] == [
-        "sales_order", "sales_order_item", "product"]
+        "sales_order", "sales_order_item", "product", "customer"]
     assert run_varchar.call_args.args[1] == "INCREMENTAL"
     assert run_int.call_args.args[1] == "INCREMENTAL"
     assert run_datetime.call_args.args[1] == "INCREMENTAL"
