@@ -8,6 +8,7 @@ transações, produtos de pedido, endereços, cupons individuais e onze referenc
 Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.magento_sales_order`, `raw.magento_sales_order_item`, `raw.magento_product`,
 `raw.magento_product_varchar`, `raw.magento_product_int`,
+`raw.magento_product_datetime`,
 `raw.ativo_pedido` e
 `raw.ativo_pedido_evento`, `raw.ativo_evento`, `raw.ativo_evento_modalidade`,
 `raw.ativo_modalidade_categoria`, `raw.ativo_pedido_status`,
@@ -57,6 +58,9 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main full --source magento --entity product_int --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source magento --entity product_int
 .venv\Scripts\python -m src.main snapshot --source magento --entity product_int
+.venv\Scripts\python -m src.main full --source magento --entity product_datetime --batch-size 10000
+.venv\Scripts\python -m src.main incremental --source magento --entity product_datetime
+.venv\Scripts\python -m src.main snapshot --source magento --entity product_datetime
 .venv\Scripts\python -m src.main full --source ativo --entity pedido --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source ativo --entity pedido
 .venv\Scripts\python -m src.main reconcile --source ativo --entity pedido --days 30
@@ -103,7 +107,7 @@ aplica os dois primeiros arquivos de `sql/postgres` em uma transação. Exceçõ
 rollback. `inspect` consulta colunas e índices reais no `information_schema`,
 sem ler registros pessoais. Use-o antes de definir as tabelas RAW de negócio.
 Também é possível passar `--env-file CAMINHO` antes do subcomando.
-Sem `--source`, FULL executa os cinco objetos Magento e as oito
+Sem `--source`, FULL executa os seis objetos Magento e as oito
 entidades Ativo com carga por PK (`sa_pedido`, `sa_pedido_evento`, `sa_usuario`,
 `sa_usuario_balcao`, `sa_pedido_pagamento`, `sa_transacao`,
 `sa_pedido_produto` e `sa_pedido_endereco`) em sequência.
@@ -114,8 +118,8 @@ antes de executá-lo, faça a carga seletiva explícita de cupons com `reconcile
 `sa_pedido_endereco`; `sa_transacao` só é reconciliada quando solicitada
 explicitamente, porque a origem não tem índice nas colunas de data.
 `snapshot` sem `--source` percorre os onze referenciais Ativo e `sa_pedido_produto`;
-com `--source magento`, sincroniza os EAV varchar e int de produtos.
-Com `--source magento` em FULL/incremental sem `--entity`, executam os cinco
+com `--source magento`, sincroniza os EAV varchar, int e datetime de produtos.
+Com `--source magento` em FULL/incremental sem `--entity`, executam os seis
 entidades Magento. Cada uma tem seu próprio UUID, lock, transação e watermark. Uma falha interrompe
 a sequência; uma entidade já confirmada não é revertida pela falha da seguinte.
 
@@ -295,6 +299,27 @@ Em 2026-09-29, FULL e snapshot carregaram 35.249 linhas: 1.895 do atributo
 zeros, iguais aos da origem. O snapshot removeu zero linhas e o incremental
 não encontrou IDs novos; o watermark permaneceu em `567586091`. Uma amostra
 de 21 linhas coincidiu nos cinco campos. Totais podem mudar na origem.
+
+## catalog_product_entity_datetime — atributo 195
+
+`raw.magento_product_datetime` copia somente `attribute_id=195` (`event_date`)
+com `value_id`, `attribute_id`, `store_id`, `entity_id` e `value`, além dos
+metadados RAW. A PK real é `value_id` e `value` é DATETIME nullable na origem.
+Nenhuma data zero ou com partes zeradas foi encontrada na inspeção, por isso
+`value` usa TIMESTAMP sem fuso no PostgreSQL: o horário é preservado como
+recebido, sem conversão. Se uma data zero aparecer futuramente, a carga falhará
+e será revertida até que o mapeamento seja reavaliado; não há substituição
+silenciosa.
+
+FULL inicial e incremental paginam por PK. O incremental só vê IDs novos; o
+snapshot explícito relê o atributo para refletir mudanças e exclusões antigas.
+O snapshot remove linhas ausentes apenas após extração completa e validação
+das contagens, na mesma transação de COPY/UPSERT, watermark e SUCCESS.
+
+Em 2026-09-29, FULL e snapshot carregaram 1.342 linhas, com contagens iguais
+entre origem e RAW. O snapshot não removeu linhas e o incremental não encontrou
+IDs novos; o watermark ficou em `18292`. Uma amostra de 21 linhas coincidiu
+nos cinco campos. Totais podem mudar na origem.
 
 ## sa_pedido — implementado
 
@@ -553,12 +578,12 @@ Essas contagens podem mudar.
 
 6. Continuar gradualmente com as demais entidades após inspecionar colunas,
    PKs e índices reais; os dois cadastros de usuário, pagamentos, transações,
-   produtos de pedido, endereços, cupons individuais, produto e EAV varchar/int
-   Magento e onze referenciais já estão implementados. A próxima tabela
-   Magento prevista é `catalog_product_entity_datetime` (atributo 195).
+   produtos de pedido, endereços, cupons individuais, produto e EAV
+   varchar/int/datetime Magento e onze referenciais já estão implementados.
+   A próxima tabela Magento prevista é `eav_attribute`.
 
 `full`, `incremental` e `--batch-size` estão disponíveis para pedidos, itens,
-produtos e EAV varchar/int Magento, e para `sa_pedido`, `sa_pedido_evento`,
+produtos e EAV varchar/int/datetime Magento, e para `sa_pedido`, `sa_pedido_evento`,
 `sa_usuario`, `sa_usuario_balcao`,
 `sa_pedido_pagamento`, `sa_transacao`, `sa_pedido_produto` e
 `sa_pedido_endereco`. O incremental também aceita `sa_cupom_desconto_item` após
@@ -567,8 +592,8 @@ sua carga seletiva. `reconcile` e `--days` estão disponíveis para
 `sa_pedido_pagamento`, `sa_transacao` e `sa_pedido_endereco`, com transações
 somente de forma explícita.
 Para cupons individuais, `reconcile` é explícito e não aceita `--days`.
-O snapshot Magento sincroniza `catalog_product_entity_varchar` e
-`catalog_product_entity_int`.
+O snapshot Magento sincroniza `catalog_product_entity_varchar`,
+`catalog_product_entity_int` e `catalog_product_entity_datetime`.
 `snapshot` está disponível para `sa_evento`, `sa_evento_modalidade`,
 `sa_modalidade_categoria`, `sa_pedido_status`, `sa_tamanho_camiseta`,
 `sa_formas_pagamento`, `sa_produto`, `sa_combo`, `sa_cidade`, `sa_estado` e

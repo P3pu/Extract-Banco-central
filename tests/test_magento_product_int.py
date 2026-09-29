@@ -126,9 +126,11 @@ def test_cli_modes_and_source_guard():
     assert [call.args[1] for call in run.call_args_list] == ["FULL", "INCREMENTAL", "SNAPSHOT"]
 
 
-def test_magento_snapshot_defaults_to_both_eav_tables():
+def test_magento_snapshot_defaults_to_all_eav_tables():
     with patch("src.main.Settings.load"), patch("src.pipeline.magento_product_varchar.run") as varchar, \
-         patch.object(pipeline, "run") as integer:
+         patch.object(pipeline, "run") as integer, \
+         patch("src.pipeline.magento_product_datetime.run") as dated:
         assert main(["snapshot", "--source", "magento"]) == 0
     assert varchar.call_args.args[1] == "SNAPSHOT"
     assert integer.call_args.args[1] == "SNAPSHOT"
+    assert dated.call_args.args[1] == "SNAPSHOT"
