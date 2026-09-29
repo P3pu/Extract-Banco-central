@@ -148,6 +148,23 @@ class MySQLReader:
             cursor.execute(query, params)
             return cursor.fetchall()
 
+    def option_value_bounds(self):
+        from src.sources.magento.option_value import TABLE
+        with self._connection.cursor() as cursor:
+            cursor.execute("SELECT @@transaction_isolation, @@session.time_zone")
+            isolation, zone = cursor.fetchone()
+            if isolation.upper() != "REPEATABLE-READ" or zone != "America/Buenos_Aires":
+                raise ValueError("Isolamento ou fuso da origem divergente do contrato")
+            cursor.execute(f"SELECT COUNT(*), MAX(value_id) FROM `{TABLE}`")
+            return cursor.fetchone()
+
+    def option_value_page(self, **kwargs):
+        from src.sources.magento.option_value import page_query
+        query, params = page_query(**kwargs)
+        with self._connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
     def ativo_pedido_bounds(self, count_total=True):
         with self._connection.cursor() as cursor:
             cursor.execute("SELECT @@tx_isolation, @@session.time_zone, @@system_time_zone")
