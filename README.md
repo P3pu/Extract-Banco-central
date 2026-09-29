@@ -9,7 +9,7 @@ Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.magento_sales_order`, `raw.magento_sales_order_item`, `raw.magento_product`,
 `raw.magento_product_varchar`, `raw.magento_product_int`,
 `raw.magento_product_datetime`, `raw.magento_eav_attribute`,
-`raw.magento_option_value`, `raw.magento_customer`,
+`raw.magento_option_value`, `raw.magento_customer`, `raw.magento_customer_address`,
 `raw.ativo_pedido` e
 `raw.ativo_pedido_evento`, `raw.ativo_evento`, `raw.ativo_evento_modalidade`,
 `raw.ativo_modalidade_categoria`, `raw.ativo_pedido_status`,
@@ -55,6 +55,8 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main incremental --source magento --entity product
 .venv\Scripts\python -m src.main full --source magento --entity customer --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source magento --entity customer
+.venv\Scripts\python -m src.main full --source magento --entity customer_address --batch-size 10000
+.venv\Scripts\python -m src.main incremental --source magento --entity customer_address
 .venv\Scripts\python -m src.main full --source magento --entity product_varchar --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source magento --entity product_varchar
 .venv\Scripts\python -m src.main snapshot --source magento --entity product_varchar
@@ -112,7 +114,7 @@ aplica os dois primeiros arquivos de `sql/postgres` em uma transação. Exceçõ
 rollback. `inspect` consulta colunas e índices reais no `information_schema`,
 sem ler registros pessoais. Use-o antes de definir as tabelas RAW de negócio.
 Também é possível passar `--env-file CAMINHO` antes do subcomando.
-Sem `--source`, FULL executa sete objetos Magento e as oito
+Sem `--source`, FULL executa oito objetos Magento e as oito
 entidades Ativo com carga por PK (`sa_pedido`, `sa_pedido_evento`, `sa_usuario`,
 `sa_usuario_balcao`, `sa_pedido_pagamento`, `sa_transacao`,
 `sa_pedido_produto` e `sa_pedido_endereco`) em sequência.
@@ -125,7 +127,7 @@ explicitamente, porque a origem não tem índice nas colunas de data.
 `snapshot` sem `--source` percorre os onze referenciais Ativo e `sa_pedido_produto`;
 com `--source magento`, sincroniza os EAV varchar, int e datetime de produtos,
 os seis metadados em `eav_attribute` e todos os valores de opções.
-Com `--source magento` em FULL/incremental sem `--entity`, executam-se as sete
+Com `--source magento` em FULL/incremental sem `--entity`, executam-se as oito
 entidades Magento. Cada uma tem seu próprio UUID, lock, transação e watermark. Uma falha interrompe
 a sequência; uma entidade já confirmada não é revertida pela falha da seguinte.
 
@@ -386,6 +388,23 @@ a RAW tinha 1.197.021 linhas após novos cadastros. Uma amostra de 22 linhas,
 incluindo datas com ano zero, coincidiu em todos os dez campos. Totais mudam
 enquanto a origem está em operação.
 
+## customer_address_entity — implementado
+
+`raw.magento_customer_address` copia todos os endereços e somente os onze campos
+solicitados. A PK é `entity_id`; `parent_id`, `region`, `region_id` e `postcode`
+aceitam NULL conforme a origem. Nomes e outros campos não solicitados não são
+extraídos. Telefones e endereços não são exibidos em logs ou testes. NUL em
+texto, caso apareça, é substituído por `�`.
+
+FULL e INCREMENTAL paginam pela PK. A origem não tem índice em `updated_at`,
+então o incremental percorre a PK e seleciona linhas atualizadas desde o
+watermark com sobreposição de cinco minutos; exclusões físicas não são
+detectadas. O FULL só confirma após contagens iguais na origem e no destino.
+Em 2026-09-29, o FULL carregou 845.966 endereços; o incremental seguinte
+releu 68 registros e a RAW passou a 845.967 linhas após novos cadastros.
+Uma amostra de 20 linhas coincidiu nos onze campos. A consulta à origem não
+encontrou `parent_id` nulo. Totais podem mudar na origem.
+
 ## sa_pedido — implementado
 
 Os 19 campos solicitados, a PK física `id_pedido` e o índice em `dt_pedido`
@@ -645,11 +664,12 @@ Essas contagens podem mudar.
    PKs e índices reais; os dois cadastros de usuário, pagamentos, transações,
    produtos de pedido, endereços, cupons individuais, produto e EAV
    varchar/int/datetime, metadados e valores de opções EAV Magento, clientes
-   Magento e onze referenciais já estão implementados. A próxima tabela Magento
-   prevista é `customer_address_entity`.
+   e endereços de clientes Magento e onze referenciais já estão implementados.
+   A próxima tabela Magento prevista é `customer_has_related_order_items`.
 
 `full`, `incremental` e `--batch-size` estão disponíveis para pedidos, itens,
-produtos, clientes e EAV varchar/int/datetime Magento, e para `sa_pedido`, `sa_pedido_evento`,
+produtos, clientes, endereços de clientes e EAV varchar/int/datetime Magento,
+e para `sa_pedido`, `sa_pedido_evento`,
 `sa_usuario`, `sa_usuario_balcao`,
 `sa_pedido_pagamento`, `sa_transacao`, `sa_pedido_produto` e
 `sa_pedido_endereco`. O incremental também aceita `sa_cupom_desconto_item` após
