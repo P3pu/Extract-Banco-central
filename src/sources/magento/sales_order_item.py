@@ -2,6 +2,7 @@
 from datetime import timedelta
 
 PK = "item_id"
+PAGE_BY_PK = True
 FIELDS = {
     "item_id": ("int unsigned", "BIGINT", False),
     "order_id": ("int unsigned", "BIGINT", False),

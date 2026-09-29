@@ -8,11 +8,12 @@ from psycopg import sql
 from src.config.settings import ROOT
 from src.db import mysql, postgres
 from src.loaders import postgres_loader as loader
-from src.sources.magento import sales_order, sales_order_item
+from src.sources.magento import product, sales_order, sales_order_item
 
 ENTITIES = {
     "sales_order": (sales_order, 7248319201, "003_create_magento_raw.sql"),
     "sales_order_item": (sales_order_item, 7248319202, "003b_create_magento_sales_order_item.sql"),
+    "product": (product, 7248319203, "024_create_magento_product_raw.sql"),
 }
 
 def log(event, **fields):
@@ -22,6 +23,7 @@ def log(event, **fields):
 
 def load(connection, reader, mode, batch_size, batch_id, old, progress, entity="sales_order"):
     contract, _, ddl = ENTITIES[entity]
+    source_table = getattr(contract, "TABLE", entity)
     target = ("raw", f"magento_{entity}")
     count, upper_id, upper_time = getattr(reader, f"{entity}_bounds")(count_total=mode == "FULL")
     connection.execute((ROOT / "sql/postgres" / ddl).read_text(encoding="utf-8"))
@@ -40,13 +42,14 @@ def load(connection, reader, mode, batch_size, batch_id, old, progress, entity="
             value = row[contract.COLUMNS.index("updated_at")]
             newest = max(newest, value) if newest else value
         last = rows[-1]
-        cursor = last[0] if mode == "FULL" or entity == "sales_order_item" else (last[contract.COLUMNS.index("updated_at")], last[0])
-        log("batch", batch_id=batch_id, table=entity, mode=mode, **progress)
+        cursor = last[0] if mode == "FULL" or getattr(contract, "PAGE_BY_PK", False) else (last[contract.COLUMNS.index("updated_at")], last[0])
+        log("batch", batch_id=batch_id, table=source_table, mode=mode, **progress)
     if mode == "FULL":
         destination = connection.execute(sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier(*target))).fetchone()[0]
         if count != progress["rows_extracted"] or count != destination:
             raise ValueError("Contagem origem/destino divergente; carga revertida")
-        log("validated", batch_id=batch_id, table=entity, source_count=count, destination_count=destination)
+        log("validated", batch_id=batch_id, table=source_table,
+            source_count=count, destination_count=destination)
     return newest
 
 
@@ -58,7 +61,8 @@ def run(settings, mode, batch_size=None, entity="sales_order"):
     started = monotonic()
     progress = {"rows_extracted": 0, "rows_loaded": 0}
     contract, lock_id, _ = ENTITIES[entity]
-    key = (f"raw.magento_{entity}", "magento", entity)
+    source_table = getattr(contract, "TABLE", entity)
+    key = (f"raw.magento_{entity}", "magento", source_table)
     with postgres.connect(settings) as connection:
         # Lock de sessão cobre também os commits dos registros de execução.
         if not connection.execute("SELECT pg_try_advisory_lock(%s)", (lock_id,)).fetchone()[0]:
@@ -74,10 +78,10 @@ def run(settings, mode, batch_size=None, entity="sales_order"):
             old = datetime.fromisoformat(row[0]) if row and row[0] else None
             if mode == "INCREMENTAL" and old is None:
                 raise ValueError("Execute FULL antes do incremental")
-            log("started", batch_id=batch_id, table=entity, mode=mode, previous_watermark=old)
+            log("started", batch_id=batch_id, table=source_table, mode=mode, previous_watermark=old)
             with mysql.connect(settings, "magento") as reader:
                 db = settings.database("magento").database
-                contract.validate_schema(reader.columns(db, entity), reader.indexes(db, entity))
+                contract.validate_schema(reader.columns(db, source_table), reader.indexes(db, source_table))
                 newest = load(connection, reader, mode, batch_size, batch_id, old, progress, entity=entity)
             connection.execute(
                 "INSERT INTO raw._etl_watermark (pipeline_name,source_system,source_table,strategy,"
@@ -98,13 +102,13 @@ def run(settings, mode, batch_size=None, entity="sales_order"):
                 "rows_extracted=%s,rows_loaded=0,error_message=%s WHERE batch_id=%s AND status='RUNNING'",
                 (progress["rows_extracted"], type(exc).__name__, batch_id))
             connection.commit()
-            log("failed", batch_id=batch_id, table=entity, mode=mode, error=type(exc).__name__,
+            log("failed", batch_id=batch_id, table=source_table, mode=mode, error=type(exc).__name__,
                 duration_seconds=round(monotonic()-started, 2))
             raise
         finally:
             # Fechamento da conexão também libera o lock, mesmo após falha de rede.
             if not connection.closed:
                 connection.execute("SELECT pg_advisory_unlock(%s)", (lock_id,))
-        log("success", batch_id=batch_id, table=entity, mode=mode, new_watermark=newest,
+        log("success", batch_id=batch_id, table=source_table, mode=mode, new_watermark=newest,
             duration_seconds=round(monotonic()-started, 2), **progress)
     return batch_id

@@ -63,7 +63,7 @@ def test_chunking_and_watermark_does_not_regress():
 
 
 @pytest.mark.parametrize("failure", [False, True])
-@pytest.mark.parametrize("entity", ["sales_order", "sales_order_item"])
+@pytest.mark.parametrize("entity", ["sales_order", "sales_order_item", "product"])
 def test_atomic_success_and_rollback_without_watermark(failure, entity):
     connection, reader = MagicMock(), MagicMock()
     connection.closed = False
@@ -98,7 +98,8 @@ def test_atomic_success_and_rollback_without_watermark(failure, entity):
     assert connection.rollback.call_count == int(failure)
     assert connection.commit.call_count == 2
     start = next(c for c in connection.execute.call_args_list if "INSERT INTO raw._etl_runs" in str(c.args[0]))
-    assert start.args[1][1:4] == (f"raw.magento_{entity}", "magento", entity)
+    assert start.args[1][1:4] == (f"raw.magento_{entity}", "magento",
+                                "catalog_product_entity" if entity == "product" else entity)
     if failure:
         failed = next(c for c in connection.execute.call_args_list if "status='FAILED'" in str(c.args[0]))
         assert failed.args[1][1] == "ValueError"

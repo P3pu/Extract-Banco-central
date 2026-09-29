@@ -38,7 +38,7 @@ def parser():
     for mode in ("full", "incremental"):
         load = commands.add_parser(mode, help="Carga de Magento e Ativo")
         load.add_argument("--source", choices=["magento", "ativo"])
-        entities = ["sales_order", "sales_order_item", "pedido", "pedido_evento",
+        entities = ["sales_order", "sales_order_item", "product", "pedido", "pedido_evento",
                     "usuario", "usuario_balcao", "pedido_pagamento", "transacao",
                     "pedido_produto", "pedido_endereco"]
         if mode == "incremental":
@@ -107,7 +107,7 @@ def main(argv=None):
                     raise ConfigurationError("Entidade incompatível com Magento")
                 if source != "ativo":
                     from src.pipeline.sales_order import run
-                    for entity in ([args.entity] if args.entity else ["sales_order", "sales_order_item"]):
+                    for entity in ([args.entity] if args.entity else ["sales_order", "sales_order_item", "product"]):
                         run(settings, args.command.upper(), args.batch_size, entity=entity)
                 if source != "magento":
                     for entity in ([args.entity] if args.entity else ativo_entities):
