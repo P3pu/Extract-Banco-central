@@ -8,7 +8,7 @@ transações, produtos de pedido, endereços, cupons individuais e onze referenc
 Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.magento_sales_order`, `raw.magento_sales_order_item`, `raw.magento_product`,
 `raw.magento_product_varchar`, `raw.magento_product_int`,
-`raw.magento_product_datetime`,
+`raw.magento_product_datetime`, `raw.magento_eav_attribute`,
 `raw.ativo_pedido` e
 `raw.ativo_pedido_evento`, `raw.ativo_evento`, `raw.ativo_evento_modalidade`,
 `raw.ativo_modalidade_categoria`, `raw.ativo_pedido_status`,
@@ -61,6 +61,7 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main full --source magento --entity product_datetime --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source magento --entity product_datetime
 .venv\Scripts\python -m src.main snapshot --source magento --entity product_datetime
+.venv\Scripts\python -m src.main snapshot --source magento --entity eav_attribute
 .venv\Scripts\python -m src.main full --source ativo --entity pedido --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source ativo --entity pedido
 .venv\Scripts\python -m src.main reconcile --source ativo --entity pedido --days 30
@@ -118,7 +119,8 @@ antes de executá-lo, faça a carga seletiva explícita de cupons com `reconcile
 `sa_pedido_endereco`; `sa_transacao` só é reconciliada quando solicitada
 explicitamente, porque a origem não tem índice nas colunas de data.
 `snapshot` sem `--source` percorre os onze referenciais Ativo e `sa_pedido_produto`;
-com `--source magento`, sincroniza os EAV varchar, int e datetime de produtos.
+com `--source magento`, sincroniza os EAV varchar, int e datetime de produtos
+e seus seis metadados em `eav_attribute`.
 Com `--source magento` em FULL/incremental sem `--entity`, executam os seis
 entidades Magento. Cada uma tem seu próprio UUID, lock, transação e watermark. Uma falha interrompe
 a sequência; uma entidade já confirmada não é revertida pela falha da seguinte.
@@ -320,6 +322,25 @@ Em 2026-09-29, FULL e snapshot carregaram 1.342 linhas, com contagens iguais
 entre origem e RAW. O snapshot não removeu linhas e o incremental não encontrou
 IDs novos; o watermark ficou em `18292`. Uma amostra de 21 linhas coincidiu
 nos cinco campos. Totais podem mudar na origem.
+
+## eav_attribute — seis metadados de produto
+
+`raw.magento_eav_attribute` sincroniza somente os IDs 73, 194, 195, 206, 207
+e 321, com `attribute_id`, `attribute_code`, `backend_type` e
+`frontend_input`, além dos metadados RAW. A PK real é `attribute_id`;
+`frontend_input` aceita NULL. Os seis códigos reais foram confirmados:
+`name`, `event_combo`, `event_date`, `kit_modality`, `size` e `event_rel_pai`.
+Esses campos são copiados literalmente, sem traduzir opções ou relacioná-los
+a produtos nesta camada.
+
+O modo é SNAPSHOT explícito. Ele extrai os seis IDs em uma transação MySQL
+somente leitura, faz COPY/UPSERT em lotes e compara contagens. Apenas depois
+disso remove da RAW os IDs dessa seleção que deixaram de existir na origem.
+Dados, exclusões, watermark e SUCCESS são confirmados juntos no PostgreSQL.
+
+Em 2026-09-29, o snapshot carregou seis linhas, todas iguais à origem nos
+quatro campos. Uma segunda execução manteve seis linhas e removeu zero,
+confirmando a idempotência. Totais podem mudar na origem.
 
 ## sa_pedido — implementado
 
@@ -579,8 +600,9 @@ Essas contagens podem mudar.
 6. Continuar gradualmente com as demais entidades após inspecionar colunas,
    PKs e índices reais; os dois cadastros de usuário, pagamentos, transações,
    produtos de pedido, endereços, cupons individuais, produto e EAV
-   varchar/int/datetime Magento e onze referenciais já estão implementados.
-   A próxima tabela Magento prevista é `eav_attribute`.
+   varchar/int/datetime e metadados EAV Magento e onze referenciais já estão
+   implementados. A próxima tabela Magento prevista é
+   `eav_attribute_option_value`.
 
 `full`, `incremental` e `--batch-size` estão disponíveis para pedidos, itens,
 produtos e EAV varchar/int/datetime Magento, e para `sa_pedido`, `sa_pedido_evento`,
@@ -593,7 +615,8 @@ sua carga seletiva. `reconcile` e `--days` estão disponíveis para
 somente de forma explícita.
 Para cupons individuais, `reconcile` é explícito e não aceita `--days`.
 O snapshot Magento sincroniza `catalog_product_entity_varchar`,
-`catalog_product_entity_int` e `catalog_product_entity_datetime`.
+`catalog_product_entity_int`, `catalog_product_entity_datetime` e
+`eav_attribute`.
 `snapshot` está disponível para `sa_evento`, `sa_evento_modalidade`,
 `sa_modalidade_categoria`, `sa_pedido_status`, `sa_tamanho_camiseta`,
 `sa_formas_pagamento`, `sa_produto`, `sa_combo`, `sa_cidade`, `sa_estado` e

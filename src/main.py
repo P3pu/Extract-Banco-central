@@ -61,7 +61,7 @@ def parser():
                                               "tamanho_camiseta", "formas_pagamento",
                                               "produto", "combo", "cidade", "estado", "pais",
                                               "pedido_produto", "product_varchar", "product_int",
-                                              "product_datetime"])
+                                              "product_datetime", "eav_attribute"])
     snapshot.add_argument("--batch-size", type=int)
     return root
 
@@ -73,22 +73,26 @@ def main(argv=None):
         if args.command in {"full", "incremental", "reconcile", "snapshot"}:
             if args.command == "snapshot":
                 source = args.source or ("magento" if args.entity in {"product_varchar", "product_int",
-                                                                   "product_datetime"}
+                                                                   "product_datetime", "eav_attribute"}
                                          else "ativo")
                 if source == "magento":
-                    if args.entity not in (None, "product_varchar", "product_int", "product_datetime"):
+                    if args.entity not in (None, "product_varchar", "product_int",
+                                           "product_datetime", "eav_attribute"):
                         raise ConfigurationError("Entidade incompatível com Magento")
                     for entity in ([args.entity] if args.entity else ["product_varchar", "product_int",
-                                                                  "product_datetime"]):
+                                                                  "product_datetime", "eav_attribute"]):
                         if entity == "product_varchar":
                             from src.pipeline.magento_product_varchar import run
                         elif entity == "product_int":
                             from src.pipeline.magento_product_int import run
-                        else:
+                        elif entity == "product_datetime":
                             from src.pipeline.magento_product_datetime import run
+                        else:
+                            from src.pipeline.magento_eav_attribute import run
                         run(settings, "SNAPSHOT", args.batch_size)
                 else:
-                    if args.entity in {"product_varchar", "product_int", "product_datetime"}:
+                    if args.entity in {"product_varchar", "product_int", "product_datetime",
+                                       "eav_attribute"}:
                         raise ConfigurationError("Entidade incompatível com Ativo")
                     from src.pipeline.ativo_snapshot import ENTITIES, run as run_reference
                     for entity in ([args.entity] if args.entity else [*ENTITIES, "pedido_produto"]):

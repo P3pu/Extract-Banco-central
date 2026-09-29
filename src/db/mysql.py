@@ -128,6 +128,26 @@ class MySQLReader:
             cursor.execute(query, params)
             return cursor.fetchall()
 
+    def eav_attribute_bounds(self):
+        from src.sources.magento.eav_attribute import ATTRIBUTES, TABLE
+        with self._connection.cursor() as cursor:
+            cursor.execute("SELECT @@transaction_isolation, @@session.time_zone")
+            isolation, zone = cursor.fetchone()
+            if isolation.upper() != "REPEATABLE-READ" or zone != "America/Buenos_Aires":
+                raise ValueError("Isolamento ou fuso da origem divergente do contrato")
+            marks = ", ".join(["%s"] * len(ATTRIBUTES))
+            cursor.execute(
+                f"SELECT COUNT(*), MAX(attribute_id) FROM `{TABLE}` "
+                f"WHERE attribute_id IN ({marks})", ATTRIBUTES)
+            return cursor.fetchone()
+
+    def eav_attribute_page(self, **kwargs):
+        from src.sources.magento.eav_attribute import page_query
+        query, params = page_query(**kwargs)
+        with self._connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
     def ativo_pedido_bounds(self, count_total=True):
         with self._connection.cursor() as cursor:
             cursor.execute("SELECT @@tx_isolation, @@session.time_zone, @@system_time_zone")
