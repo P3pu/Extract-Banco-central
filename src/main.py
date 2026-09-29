@@ -38,7 +38,8 @@ def parser():
     for mode in ("full", "incremental"):
         load = commands.add_parser(mode, help="Carga de Magento e Ativo")
         load.add_argument("--source", choices=["magento", "ativo"])
-        entities = ["sales_order", "sales_order_item", "product", "pedido", "pedido_evento",
+        entities = ["sales_order", "sales_order_item", "product", "product_varchar",
+                    "pedido", "pedido_evento",
                     "usuario", "usuario_balcao", "pedido_pagamento", "transacao",
                     "pedido_produto", "pedido_endereco"]
         if mode == "incremental":
@@ -52,13 +53,13 @@ def parser():
                                                 "cupom_desconto_item"])
     reconcile.add_argument("--batch-size", type=int)
     reconcile.add_argument("--days", type=int)
-    snapshot = commands.add_parser("snapshot", help="Sincroniza referências Ativo de forma transacional")
-    snapshot.add_argument("--source", choices=["ativo"], default="ativo")
+    snapshot = commands.add_parser("snapshot", help="Sincroniza referenciais e EAV de forma transacional")
+    snapshot.add_argument("--source", choices=["ativo", "magento"])
     snapshot.add_argument("--entity", choices=["evento", "evento_modalidade",
                                               "modalidade_categoria", "pedido_status",
                                               "tamanho_camiseta", "formas_pagamento",
                                               "produto", "combo", "cidade", "estado", "pais",
-                                              "pedido_produto"])
+                                              "pedido_produto", "product_varchar"])
     snapshot.add_argument("--batch-size", type=int)
     return root
 
@@ -69,13 +70,22 @@ def main(argv=None):
         settings = Settings.load(**({"env_file": args.env_file} if args.env_file else {}))
         if args.command in {"full", "incremental", "reconcile", "snapshot"}:
             if args.command == "snapshot":
-                from src.pipeline.ativo_snapshot import ENTITIES, run as run_reference
-                for entity in ([args.entity] if args.entity else [*ENTITIES, "pedido_produto"]):
-                    if entity == "pedido_produto":
-                        from src.pipeline.ativo_complementos import run
-                        run(settings, "SNAPSHOT", args.batch_size, entity=entity)
-                    else:
-                        run_reference(settings, args.batch_size, entity=entity)
+                source = args.source or ("magento" if args.entity == "product_varchar" else "ativo")
+                if source == "magento":
+                    if args.entity not in (None, "product_varchar"):
+                        raise ConfigurationError("Entidade incompatível com Magento")
+                    from src.pipeline.magento_product_varchar import run
+                    run(settings, "SNAPSHOT", args.batch_size)
+                else:
+                    if args.entity == "product_varchar":
+                        raise ConfigurationError("Entidade incompatível com Ativo")
+                    from src.pipeline.ativo_snapshot import ENTITIES, run as run_reference
+                    for entity in ([args.entity] if args.entity else [*ENTITIES, "pedido_produto"]):
+                        if entity == "pedido_produto":
+                            from src.pipeline.ativo_complementos import run
+                            run(settings, "SNAPSHOT", args.batch_size, entity=entity)
+                        else:
+                            run_reference(settings, args.batch_size, entity=entity)
             elif args.command == "reconcile":
                 for entity in ([args.entity] if args.entity else ["pedido", "pedido_evento",
                                                                   "usuario", "usuario_balcao",
@@ -107,8 +117,13 @@ def main(argv=None):
                     raise ConfigurationError("Entidade incompatível com Magento")
                 if source != "ativo":
                     from src.pipeline.sales_order import run
-                    for entity in ([args.entity] if args.entity else ["sales_order", "sales_order_item", "product"]):
-                        run(settings, args.command.upper(), args.batch_size, entity=entity)
+                    for entity in ([args.entity] if args.entity else ["sales_order", "sales_order_item",
+                                                                  "product", "product_varchar"]):
+                        if entity == "product_varchar":
+                            from src.pipeline.magento_product_varchar import run as run_varchar
+                            run_varchar(settings, args.command.upper(), args.batch_size)
+                        else:
+                            run(settings, args.command.upper(), args.batch_size, entity=entity)
                 if source != "magento":
                     for entity in ([args.entity] if args.entity else ativo_entities):
                         if entity == "cupom_desconto_item":
