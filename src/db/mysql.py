@@ -88,6 +88,26 @@ class MySQLReader:
             cursor.execute(query, params)
             return cursor.fetchall()
 
+    def product_int_bounds(self, count_total=True):
+        from src.sources.magento.product_int import ATTRIBUTES, TABLE
+        with self._connection.cursor() as cursor:
+            cursor.execute("SELECT @@transaction_isolation, @@session.time_zone")
+            isolation, zone = cursor.fetchone()
+            if isolation.upper() != "REPEATABLE-READ" or zone != "America/Buenos_Aires":
+                raise ValueError("Isolamento ou fuso da origem divergente do contrato")
+            aggregate = "COUNT(*)" if count_total else "NULL"
+            cursor.execute(
+                f"SELECT {aggregate}, MAX(value_id) FROM `{TABLE}` "
+                "WHERE attribute_id IN (%s, %s, %s)", ATTRIBUTES)
+            return cursor.fetchone()
+
+    def product_int_page(self, **kwargs):
+        from src.sources.magento.product_int import page_query
+        query, params = page_query(**kwargs)
+        with self._connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
     def ativo_pedido_bounds(self, count_total=True):
         with self._connection.cursor() as cursor:
             cursor.execute("SELECT @@tx_isolation, @@session.time_zone, @@system_time_zone")
