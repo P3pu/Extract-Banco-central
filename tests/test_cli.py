@@ -14,7 +14,8 @@ def test_without_entity_runs_magento_tables():
          patch("src.pipeline.magento_product_int.run") as run_int, \
          patch("src.pipeline.magento_product_datetime.run") as run_datetime, \
          patch("src.pipeline.magento_customer_order_item.run") as run_relation, \
-         patch("src.pipeline.magento_product_link.run") as run_links:
+         patch("src.pipeline.magento_product_link.run") as run_links, \
+         patch("src.pipeline.magento_company_user.run") as run_company_user:
         assert main(["incremental", "--source", "magento"]) == 0
     assert [c.kwargs["entity"] for c in run.call_args_list] == [
         "sales_order", "sales_order_item", "product", "customer", "customer_address"]
@@ -23,6 +24,7 @@ def test_without_entity_runs_magento_tables():
     assert run_datetime.call_args.args[1] == "INCREMENTAL"
     assert run_relation.call_args.args[1] == "INCREMENTAL"
     assert run_links.call_args.args[1] == "INCREMENTAL"
+    assert run_company_user.call_args.args[1] == "INCREMENTAL"
 
 
 def test_explicit_entity_runs_only_items():

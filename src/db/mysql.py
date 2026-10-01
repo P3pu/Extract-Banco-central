@@ -136,6 +136,23 @@ class MySQLReader:
             cursor.execute(query, params)
             return cursor.fetchall()
 
+    def company_user_bounds(self, count_total=True):
+        with self._connection.cursor() as cursor:
+            cursor.execute("SELECT @@transaction_isolation, @@session.time_zone")
+            isolation, zone = cursor.fetchone()
+            if isolation.upper() != "REPEATABLE-READ" or zone != "America/Buenos_Aires":
+                raise ValueError("Isolamento ou fuso da origem divergente do contrato")
+            aggregate = "COUNT(*)" if count_total else "NULL"
+            cursor.execute(f"SELECT {aggregate}, MAX(customer_id) FROM aw_ca_company_user")
+            return cursor.fetchone()
+
+    def company_user_page(self, **kwargs):
+        from src.sources.magento.company_user import page_query
+        query, params = page_query(**kwargs)
+        with self._connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
     def product_varchar_bounds(self, count_total=True):
         from src.sources.magento.product_varchar import ATTRIBUTES, TABLE
         with self._connection.cursor() as cursor:
