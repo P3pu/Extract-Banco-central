@@ -39,7 +39,7 @@ def parser():
         load = commands.add_parser(mode, help="Carga de Magento e Ativo")
         load.add_argument("--source", choices=["magento", "ativo"])
         entities = ["sales_order", "sales_order_item", "product", "customer", "customer_address",
-                    "customer_order_item", "product_varchar",
+                    "customer_order_item", "product_link", "product_varchar",
                     "product_int", "product_datetime",
                     "pedido", "pedido_evento",
                     "usuario", "usuario_balcao", "pedido_pagamento", "transacao",
@@ -63,7 +63,7 @@ def parser():
                                               "produto", "combo", "cidade", "estado", "pais",
                                               "pedido_produto", "product_varchar", "product_int",
                                               "product_datetime", "eav_attribute", "option_value",
-                                              "customer_order_item"])
+                                              "customer_order_item", "product_link"])
     snapshot.add_argument("--batch-size", type=int)
     return root
 
@@ -76,18 +76,21 @@ def main(argv=None):
             if args.command == "snapshot":
                 source = args.source or ("magento" if args.entity in {"product_varchar", "product_int",
                                                                    "product_datetime", "eav_attribute",
-                                                                   "option_value", "customer_order_item"}
+                                                                   "option_value", "customer_order_item",
+                                                                   "product_link"}
                                          else "ativo")
                 if source == "magento":
                     if args.entity not in (None, "product_varchar", "product_int",
                                            "product_datetime", "eav_attribute", "option_value",
-                                           "customer_order_item"):
+                                           "customer_order_item", "product_link"):
                         raise ConfigurationError("Entidade incompatível com Magento")
                     for entity in ([args.entity] if args.entity else ["product_varchar", "product_int",
                                                                   "product_datetime", "eav_attribute",
-                                                                  "option_value"]):
+                                                                  "option_value", "product_link"]):
                         if entity == "customer_order_item":
                             from src.pipeline.magento_customer_order_item import run
+                        elif entity == "product_link":
+                            from src.pipeline.magento_product_link import run
                         elif entity == "product_varchar":
                             from src.pipeline.magento_product_varchar import run
                         elif entity == "product_int":
@@ -101,7 +104,8 @@ def main(argv=None):
                         run(settings, "SNAPSHOT", args.batch_size)
                 else:
                     if args.entity in {"product_varchar", "product_int", "product_datetime",
-                                       "eav_attribute", "option_value", "customer_order_item"}:
+                                       "eav_attribute", "option_value", "customer_order_item",
+                                       "product_link"}:
                         raise ConfigurationError("Entidade incompatível com Ativo")
                     from src.pipeline.ativo_snapshot import ENTITIES, run as run_reference
                     for entity in ([args.entity] if args.entity else [*ENTITIES, "pedido_produto"]):
@@ -143,12 +147,15 @@ def main(argv=None):
                     from src.pipeline.sales_order import run
                     for entity in ([args.entity] if args.entity else ["sales_order", "sales_order_item",
                                                                   "product", "customer", "customer_address",
-                                                                  "customer_order_item",
+                                                                  "customer_order_item", "product_link",
                                                                   "product_varchar", "product_int",
                                                                   "product_datetime"]):
                         if entity == "customer_order_item":
                             from src.pipeline.magento_customer_order_item import run as run_relation
                             run_relation(settings, args.command.upper(), args.batch_size)
+                        elif entity == "product_link":
+                            from src.pipeline.magento_product_link import run as run_links
+                            run_links(settings, args.command.upper(), args.batch_size)
                         elif entity == "product_varchar":
                             from src.pipeline.magento_product_varchar import run as run_varchar
                             run_varchar(settings, args.command.upper(), args.batch_size)

@@ -10,7 +10,7 @@ Esta entrega configura conexões, `raw._etl_runs`, `raw._etl_watermark` e
 `raw.magento_product_varchar`, `raw.magento_product_int`,
 `raw.magento_product_datetime`, `raw.magento_eav_attribute`,
 `raw.magento_option_value`, `raw.magento_customer`, `raw.magento_customer_address`,
-`raw.magento_customer_order_item`,
+`raw.magento_customer_order_item`, `raw.magento_product_link`,
 `raw.ativo_pedido` e
 `raw.ativo_pedido_evento`, `raw.ativo_evento`, `raw.ativo_evento_modalidade`,
 `raw.ativo_modalidade_categoria`, `raw.ativo_pedido_status`,
@@ -61,6 +61,9 @@ Use aspas simples em senhas com caracteres especiais. Nunca compartilhe `.env`.
 .venv\Scripts\python -m src.main full --source magento --entity customer_order_item --batch-size 50000
 .venv\Scripts\python -m src.main incremental --source magento --entity customer_order_item
 .venv\Scripts\python -m src.main snapshot --source magento --entity customer_order_item --batch-size 50000
+.venv\Scripts\python -m src.main full --source magento --entity product_link
+.venv\Scripts\python -m src.main incremental --source magento --entity product_link
+.venv\Scripts\python -m src.main snapshot --source magento --entity product_link
 .venv\Scripts\python -m src.main full --source magento --entity product_varchar --batch-size 10000
 .venv\Scripts\python -m src.main incremental --source magento --entity product_varchar
 .venv\Scripts\python -m src.main snapshot --source magento --entity product_varchar
@@ -118,7 +121,7 @@ aplica os dois primeiros arquivos de `sql/postgres` em uma transação. Exceçõ
 rollback. `inspect` consulta colunas e índices reais no `information_schema`,
 sem ler registros pessoais. Use-o antes de definir as tabelas RAW de negócio.
 Também é possível passar `--env-file CAMINHO` antes do subcomando.
-Sem `--source`, FULL executa nove objetos Magento e as oito
+Sem `--source`, FULL executa dez objetos Magento e as oito
 entidades Ativo com carga por PK (`sa_pedido`, `sa_pedido_evento`, `sa_usuario`,
 `sa_usuario_balcao`, `sa_pedido_pagamento`, `sa_transacao`,
 `sa_pedido_produto` e `sa_pedido_endereco`) em sequência.
@@ -130,8 +133,8 @@ antes de executá-lo, faça a carga seletiva explícita de cupons com `reconcile
 explicitamente, porque a origem não tem índice nas colunas de data.
 `snapshot` sem `--source` percorre os onze referenciais Ativo e `sa_pedido_produto`;
 com `--source magento`, sincroniza os EAV varchar, int e datetime de produtos,
-os seis metadados em `eav_attribute` e todos os valores de opções.
-Com `--source magento` em FULL/incremental sem `--entity`, executam-se as nove
+os seis metadados em `eav_attribute`, todos os valores de opções e os links de produto.
+Com `--source magento` em FULL/incremental sem `--entity`, executam-se as dez
 entidades Magento. Cada uma tem seu próprio UUID, lock, transação e watermark. Uma falha interrompe
 a sequência; uma entidade já confirmada não é revertida pela falha da seguinte.
 
@@ -430,6 +433,22 @@ Uma amostra de 22 linhas, incluindo referências nulas, coincidiu nos três
 campos. O SNAPSHOT está implementado e testado, mas não foi executado na
 tabela inteira. Totais podem mudar na origem.
 
+## catalog_product_link — implementado
+
+`raw.magento_product_link` copia `link_id`, `product_id`, `linked_product_id`
+e `link_type_id`, sem interpretar os tipos de link e sem copiar `store_id`,
+que não foi solicitado. A PK física é `link_id`; IDs INT UNSIGNED usam BIGINT.
+
+FULL e INCREMENTAL percorrem a PK em lotes. Como a fonte não tem timestamp de
+atualização, o incremental vê apenas IDs novos. O SNAPSHOT sincroniza mudanças
+e exclusões antigas, removendo linhas ausentes somente após extração completa
+e contagens validadas na mesma transação; a tabela é pequena e entra no
+snapshot Magento padrão.
+
+Em 2026-10-01, FULL e SNAPSHOT confirmaram 6.393 links, sem remoções; o
+incremental não encontrou IDs novos. Uma amostra de 24 links, incluindo os
+cinco tipos presentes na origem, coincidiu nos quatro campos. Totais podem mudar.
+
 ## sa_pedido — implementado
 
 Os 19 campos solicitados, a PK física `id_pedido` e o índice em `dt_pedido`
@@ -689,12 +708,13 @@ Essas contagens podem mudar.
    PKs e índices reais; os dois cadastros de usuário, pagamentos, transações,
    produtos de pedido, endereços, cupons individuais, produto e EAV
    varchar/int/datetime, metadados e valores de opções EAV Magento, clientes
-   e endereços de clientes, relações cliente-item Magento e onze referenciais
-   já estão implementados. A próxima tabela Magento prevista é
-   `catalog_product_link`.
+   e endereços de clientes, relações cliente-item, links de produto Magento e
+   onze referenciais já estão implementados. A próxima tabela Magento prevista
+   é `aw_ca_company_user`.
 
 `full`, `incremental` e `--batch-size` estão disponíveis para pedidos, itens,
-produtos, clientes, endereços de clientes, relações cliente-item e EAV
+produtos, clientes, endereços de clientes, relações cliente-item, links de
+produto e EAV
 varchar/int/datetime Magento,
 e para `sa_pedido`, `sa_pedido_evento`,
 `sa_usuario`, `sa_usuario_balcao`,
@@ -707,7 +727,8 @@ somente de forma explícita.
 Para cupons individuais, `reconcile` é explícito e não aceita `--days`.
 O snapshot Magento sincroniza `catalog_product_entity_varchar`,
 `catalog_product_entity_int`, `catalog_product_entity_datetime` e
-`eav_attribute`, além de toda a `eav_attribute_option_value`.
+`eav_attribute`, além de toda a `eav_attribute_option_value` e
+`catalog_product_link`.
 `customer_has_related_order_items` tem snapshot explícito, fora do padrão.
 `snapshot` está disponível para `sa_evento`, `sa_evento_modalidade`,
 `sa_modalidade_categoria`, `sa_pedido_status`, `sa_tamanho_camiseta`,
