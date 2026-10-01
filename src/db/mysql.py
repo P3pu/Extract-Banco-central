@@ -102,6 +102,23 @@ class MySQLReader:
             cursor.execute(query, params)
             return cursor.fetchall()
 
+    def customer_order_item_bounds(self, count_total=True):
+        with self._connection.cursor() as cursor:
+            cursor.execute("SELECT @@transaction_isolation, @@session.time_zone")
+            isolation, zone = cursor.fetchone()
+            if isolation.upper() != "REPEATABLE-READ" or zone != "America/Buenos_Aires":
+                raise ValueError("Isolamento ou fuso da origem divergente do contrato")
+            aggregate = "COUNT(*)" if count_total else "NULL"
+            cursor.execute(f"SELECT {aggregate}, MAX(id) FROM customer_has_related_order_items")
+            return cursor.fetchone()
+
+    def customer_order_item_page(self, **kwargs):
+        from src.sources.magento.customer_order_item import page_query
+        query, params = page_query(**kwargs)
+        with self._connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
     def product_varchar_bounds(self, count_total=True):
         from src.sources.magento.product_varchar import ATTRIBUTES, TABLE
         with self._connection.cursor() as cursor:
