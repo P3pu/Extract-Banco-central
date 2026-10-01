@@ -40,7 +40,7 @@ def parser():
         load.add_argument("--source", choices=["magento", "ativo"])
         entities = ["sales_order", "sales_order_item", "product", "customer", "customer_address",
                     "customer_order_item", "product_link", "company_user", "company",
-                    "salesrule",
+                    "salesrule", "salesrule_label",
                     "product_varchar",
                     "product_int", "product_datetime",
                     "pedido", "pedido_evento",
@@ -66,7 +66,7 @@ def parser():
                                               "pedido_produto", "product_varchar", "product_int",
                                               "product_datetime", "eav_attribute", "option_value",
                                               "customer_order_item", "product_link", "company_user",
-                                              "company", "salesrule"])
+                                              "company", "salesrule", "salesrule_label"])
     snapshot.add_argument("--batch-size", type=int)
     return root
 
@@ -81,18 +81,19 @@ def main(argv=None):
                                                                    "product_datetime", "eav_attribute",
                                                                    "option_value", "customer_order_item",
                                                                    "product_link", "company_user", "company",
-                                                                   "salesrule"}
+                                                                   "salesrule", "salesrule_label"}
                                          else "ativo")
                 if source == "magento":
                     if args.entity not in (None, "product_varchar", "product_int",
                                            "product_datetime", "eav_attribute", "option_value",
                                            "customer_order_item", "product_link", "company_user",
-                                           "company", "salesrule"):
+                                           "company", "salesrule", "salesrule_label"):
                         raise ConfigurationError("Entidade incompatível com Magento")
                     for entity in ([args.entity] if args.entity else ["product_varchar", "product_int",
                                                                   "product_datetime", "eav_attribute",
                                                                   "option_value", "product_link",
-                                                                  "company_user", "company", "salesrule"]):
+                                                                  "company_user", "company", "salesrule",
+                                                                  "salesrule_label"]):
                         if entity == "customer_order_item":
                             from src.pipeline.magento_customer_order_item import run
                         elif entity == "product_link":
@@ -103,6 +104,8 @@ def main(argv=None):
                             from src.pipeline.magento_company import run
                         elif entity == "salesrule":
                             from src.pipeline.magento_salesrule import run
+                        elif entity == "salesrule_label":
+                            from src.pipeline.magento_salesrule_label import run
                         elif entity == "product_varchar":
                             from src.pipeline.magento_product_varchar import run
                         elif entity == "product_int":
@@ -117,7 +120,8 @@ def main(argv=None):
                 else:
                     if args.entity in {"product_varchar", "product_int", "product_datetime",
                                        "eav_attribute", "option_value", "customer_order_item",
-                                       "product_link", "company_user", "company", "salesrule"}:
+                                       "product_link", "company_user", "company", "salesrule",
+                                       "salesrule_label"}:
                         raise ConfigurationError("Entidade incompatível com Ativo")
                     from src.pipeline.ativo_snapshot import ENTITIES, run as run_reference
                     for entity in ([args.entity] if args.entity else [*ENTITIES, "pedido_produto"]):
@@ -161,6 +165,7 @@ def main(argv=None):
                                                                   "product", "customer", "customer_address",
                                                                   "customer_order_item", "product_link",
                                                                   "company_user", "company", "salesrule",
+                                                                  "salesrule_label",
                                                                   "product_varchar", "product_int",
                                                                   "product_datetime"]):
                         if entity == "customer_order_item":
@@ -178,6 +183,9 @@ def main(argv=None):
                         elif entity == "salesrule":
                             from src.pipeline.magento_salesrule import run as run_salesrule
                             run_salesrule(settings, args.command.upper(), args.batch_size)
+                        elif entity == "salesrule_label":
+                            from src.pipeline.magento_salesrule_label import run as run_labels
+                            run_labels(settings, args.command.upper(), args.batch_size)
                         elif entity == "product_varchar":
                             from src.pipeline.magento_product_varchar import run as run_varchar
                             run_varchar(settings, args.command.upper(), args.batch_size)
