@@ -28,6 +28,9 @@ Não cria databases. A configuração recusa qualquer destino diferente de
 migração implementada ajusta `fl_amigo` na RAW de inscrições para preservar
 strings vazias; outras estruturas preexistentes incompatíveis exigem avaliação.
 
+Consulte [Granularidade das tabelas RAW](GRANULARIDADE_RAW.md) para o grão e a
+chave primária de cada tabela.
+
 ## Instalação
 
 Python 3.11 ou superior, a partir da raiz do repositório:
