@@ -133,7 +133,8 @@ def test_magento_snapshot_defaults_to_all_eav_tables():
          patch("src.pipeline.magento_eav_attribute.run") as attributes, \
          patch("src.pipeline.magento_option_value.run") as options, \
          patch("src.pipeline.magento_product_link.run") as links, \
-         patch("src.pipeline.magento_company_user.run") as company_users:
+         patch("src.pipeline.magento_company_user.run") as company_users, \
+         patch("src.pipeline.magento_company.run") as companies:
         assert main(["snapshot", "--source", "magento"]) == 0
     assert varchar.call_args.args[1] == "SNAPSHOT"
     assert integer.call_args.args[1] == "SNAPSHOT"
@@ -142,3 +143,4 @@ def test_magento_snapshot_defaults_to_all_eav_tables():
     assert options.call_args.args[1] == "SNAPSHOT"
     assert links.call_args.args[1] == "SNAPSHOT"
     assert company_users.call_args.args[1] == "SNAPSHOT"
+    assert companies.call_args.args[1] == "SNAPSHOT"
