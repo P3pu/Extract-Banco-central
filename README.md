@@ -31,6 +31,12 @@ strings vazias; outras estruturas preexistentes incompatíveis exigem avaliaçã
 Consulte [Granularidade das tabelas RAW](GRANULARIDADE_RAW.md) para o grão e a
 chave primária de cada tabela.
 
+Consulte [Camada STAGING](docs/STAGING.md) para as views semânticas, implantação
+por fases, granularidade e consultas de validação.
+
+Consulte [Granularidade das views STAGING](GRANULARIDADE_STAGING.md) para o grão,
+a chave lógica e a PK da RAW de origem de cada view.
+
 ## Instalação
 
 Python 3.11 ou superior, a partir da raiz do repositório:
