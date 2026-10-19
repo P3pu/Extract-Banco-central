@@ -1,16 +1,17 @@
 -- PROPOSTA FASE B v1. NÃO EXECUTAR. UPSERT CONSERVADOR DE INSCRIÇÃO.
--- :id_min/:id_max delimitam pedido_id. Executar apenas depois de 001/002/003
+-- core.id_min/core.id_max delimitam pedido_id. Executar apenas depois de 001/002/003
 -- e de validar EXPLAIN/uniqueness dos dois SELECTs; sem backfill autorizado.
 -- Não promove métricas financeiras, status especiais, pessoa ou classificação
--- incompleta. Esses campos ficam NULL e são tratados em passo separado após
--- aprovação das dependências. Preserva órfãos com pedido_key NULL.
+-- incompleta. Em conflito, os indicadores derivados anteriores são PRESERVADOS;
+-- se a base muda, estado_derivacao vira PENDENTE e a view de indicadores
+-- válidos os oculta até recálculo. Preserva órfãos com pedido_key NULL.
 
 BEGIN;
 WITH fonte AS MATERIALIZED (
     SELECT 'ativo'::TEXT AS origem, i.inscricao_id::BIGINT AS inscricao_id_origem,
            i.pedido_id::BIGINT AS pedido_id_origem, fp.pedido_key,
            i.evento_id::BIGINT AS evento_id_origem, em.evento_key,
-           i.usuario_id::TEXT AS participante_id_origem,
+           i.usuario_id::BIGINT AS participante_id_origem,
            combo.combo_key, core.try_date(i.data_evento) AS data_evento,
            i.data_evento AS data_evento_original,
            i.campanha_salesforce_id AS sku_evento_origem,
@@ -39,7 +40,7 @@ WITH fonte AS MATERIALIZED (
     LEFT JOIN staging.ativo_pedido ap ON ap.pedido_id=i.pedido_id
     LEFT JOIN core.dim_combo combo
       ON combo.origem='ativo' AND combo.combo_id_origem=ap.combo_id::TEXT
-    WHERE i.pedido_id BETWEEN :id_min AND :id_max
+    WHERE i.pedido_id BETWEEN core.batch_min() AND core.batch_max()
     UNION ALL
     SELECT 'magento', i.inscricao_id::BIGINT,
            i.pedido_id::BIGINT, fp.pedido_key,
@@ -60,7 +61,7 @@ WITH fonte AS MATERIALIZED (
     LEFT JOIN core.evento_source_map em
       ON em.origem='magento' AND em.evento_id_origem=i.evento_id
     LEFT JOIN core.dim_evento de ON de.evento_key=em.evento_key
-    WHERE i.pedido_id BETWEEN :id_min AND :id_max
+    WHERE i.pedido_id BETWEEN core.batch_min() AND core.batch_max()
 ), pronta AS (
     SELECT f.*,
            md5(ROW(f.origem,f.inscricao_id_origem,f.pedido_id_origem,
@@ -87,7 +88,7 @@ INSERT INTO core.fato_inscricao
      tamanho_origem,status_pedido_origem,status_individual_codigo,
      valor_bruto_inscricao,desconto_individual_original,taxa_servico_ativo,
      flag_evento_teste,flag_pedido_nao_encontrado,
-     flag_evento_nao_mapeado,flag_excecao_financeira,
+     flag_evento_nao_mapeado,
      batch_id_origem,conteudo_hash)
 SELECT origem,inscricao_id_origem,pedido_id_origem,pedido_key,
        evento_id_origem,evento_key,participante_id_origem,combo_key,
@@ -97,7 +98,7 @@ SELECT origem,inscricao_id_origem,pedido_id_origem,pedido_key,
        tamanho_origem,status_pedido_origem,status_individual_codigo,
        valor_bruto_inscricao,desconto_individual_original,taxa_servico_ativo,
        flag_evento_teste,flag_pedido_nao_encontrado,
-       flag_evento_nao_mapeado,TRUE,batch_id_origem,hash_novo
+       flag_evento_nao_mapeado,batch_id_origem,hash_novo
 FROM pronta
 ON CONFLICT (origem,inscricao_id_origem) DO UPDATE SET
     pedido_id_origem=EXCLUDED.pedido_id_origem,
@@ -124,24 +125,13 @@ ON CONFLICT (origem,inscricao_id_origem) DO UPDATE SET
     flag_evento_teste=EXCLUDED.flag_evento_teste,
     flag_pedido_nao_encontrado=EXCLUDED.flag_pedido_nao_encontrado,
     flag_evento_nao_mapeado=EXCLUDED.flag_evento_nao_mapeado,
-    flag_excecao_financeira=TRUE,
-    flag_cancelado_inscricao=NULL,
-    contabiliza_inscricao=NULL,
-    contabiliza_bruto=NULL,
-    pagamento_confirmado=NULL,
-    pagamento_presumido=NULL,
-    pago_considerado=NULL,
-    classificacao_venda=NULL,
-    motivo_classificacao=NULL,
-    desconto_aplicado_inscricao=NULL,
-    valor_liquido_itens=NULL,
-    valor_liquido_inscricao=NULL,
-    liquido_individual_conciliado=NULL,
+    estado_derivacao='PENDENTE',
     batch_id_origem=EXCLUDED.batch_id_origem,
     conteudo_hash=EXCLUDED.conteudo_hash,
     atualizado_core_em=clock_timestamp()
 WHERE core.fato_inscricao.conteudo_hash IS DISTINCT FROM EXCLUDED.conteudo_hash;
 COMMIT;
 
--- A etapa de métrica/alerta permanece retida conforme 004. Não usar a
--- inscrição conservadora para faturamento enquanto flags/valores são NULL.
+-- A etapa de métrica/alerta permanece retida conforme 004. Não somar
+-- diretamente a tabela base: derivados preservados podem estar obsoletos.
+-- Consumidores usam apenas core.fato_inscricao_indicadores_validos.

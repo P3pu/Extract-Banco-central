@@ -1,5 +1,5 @@
 -- PROPOSTA FASE B v1. NÃO EXECUTAR. Revisar e testar em homologação primeiro.
--- Template psql: fornecer :id_min, :id_max (inclusive) e executar UM bloco
+-- Faixa inclusiva definida por core.id_min/core.id_max na sessão; executar UM bloco
 -- por origem/entidade dentro de uma transação de lote. Não usar para toda a
 -- história em uma transação. Requer 001, 002 e dependências de 000 aprovadas.
 -- O orquestrador futuro deve validar id_min <= id_max, serializar por lock,
@@ -13,11 +13,11 @@ SELECT 'ativo'::TEXT AS origem, evento_id::BIGINT AS evento_id_origem,
        data_evento AS data_evento_original,
        campanha_salesforce_id AS sku_origem,
        evento_id = 22054 AS flag_evento_teste
-FROM staging.ativo_evento WHERE evento_id BETWEEN :id_min AND :id_max
+FROM staging.ativo_evento WHERE evento_id BETWEEN core.batch_min() AND core.batch_max()
 UNION ALL
 SELECT 'magento', evento_id::BIGINT, evento_nome, data_evento::DATE,
        data_evento::TEXT, evento_sku, FALSE
-FROM staging.magento_evento WHERE evento_id BETWEEN :id_min AND :id_max;
+FROM staging.magento_evento WHERE evento_id BETWEEN core.batch_min() AND core.batch_max();
 CREATE UNIQUE INDEX ON core_lote_eventos(origem, evento_id_origem);
 
 INSERT INTO core.dim_evento
@@ -59,7 +59,7 @@ COMMIT;
 BEGIN;
 INSERT INTO core.dim_combo (origem, combo_id_origem, nome_combo)
 SELECT 'ativo', combo_id::TEXT, combo_nome
-FROM staging.ativo_combo WHERE combo_id BETWEEN :id_min AND :id_max
+FROM staging.ativo_combo WHERE combo_id BETWEEN core.batch_min() AND core.batch_max()
 ON CONFLICT (origem, combo_id_origem) DO UPDATE SET
     nome_combo = EXCLUDED.nome_combo, atualizado_core_em = clock_timestamp()
 WHERE core.dim_combo.nome_combo IS DISTINCT FROM EXCLUDED.nome_combo;
@@ -75,38 +75,13 @@ INSERT INTO core.fato_pedido
      desconto_pedido_origem, valor_liquido_pedido, frete_pedido,
      imposto_pedido, valor_total_cobrado, taxa_adicional_operacional,
      batch_id_origem, conteudo_hash)
-SELECT 'magento', p.pedido_id, p.protocolo, p.cliente_id::TEXT,
+SELECT 'magento', p.pedido_id, p.protocolo, p.cliente_id::BIGINT,
        p.criado_em, p.criado_em::TEXT, p.atualizado_em,
        p.status_pedido, p.estado_pedido,
-       CASE WHEN LOWER(COALESCE(p.estado_pedido,'')) = 'canceled'
-                   OR LOWER(COALESCE(p.status_pedido,'')) = 'canceled' THEN 'CANCELADO'
-            WHEN LOWER(COALESCE(p.estado_pedido,'')) IN ('new','pending')
-                 AND LOWER(COALESCE(p.status_pedido,'')) IN ('approved','processing','complete')
-                 THEN 'INDETERMINADO'
-            WHEN LOWER(COALESCE(p.estado_pedido,'')) IN ('processing','approved','complete')
-                 AND LOWER(COALESCE(p.status_pedido,'')) IN ('new','pending')
-                 THEN 'INDETERMINADO'
-            WHEN LOWER(COALESCE(p.estado_pedido,'')) IN ('processing','approved','complete')
-              OR LOWER(COALESCE(p.status_pedido,'')) IN ('processing','approved','complete')
-                 THEN 'CONFIRMADO'
-            WHEN LOWER(COALESCE(p.estado_pedido,'')) = 'pending'
-              OR LOWER(COALESCE(p.status_pedido,'')) = 'pending' THEN 'PENDENTE'
-            WHEN LOWER(COALESCE(p.estado_pedido,'')) = 'new'
-              OR LOWER(COALESCE(p.status_pedido,'')) = 'new' THEN 'NOVO'
-            ELSE 'INDETERMINADO' END,
+       core.magento_status_corporativo(p.estado_pedido,p.status_pedido),
        LOWER(COALESCE(p.estado_pedido,'')) = 'canceled'
           OR LOWER(COALESCE(p.status_pedido,'')) = 'canceled',
-       CASE WHEN LOWER(COALESCE(p.estado_pedido,'')) = 'canceled'
-                   OR LOWER(COALESCE(p.status_pedido,'')) = 'canceled' THEN FALSE
-            WHEN LOWER(COALESCE(p.estado_pedido,'')) IN ('new','pending')
-                 AND LOWER(COALESCE(p.status_pedido,'')) IN ('approved','processing','complete')
-                 THEN NULL
-            WHEN LOWER(COALESCE(p.estado_pedido,'')) IN ('processing','approved','complete')
-                 AND LOWER(COALESCE(p.status_pedido,'')) IN ('new','pending')
-                 THEN NULL
-            WHEN LOWER(COALESCE(p.estado_pedido,'')) IN ('processing','approved','complete')
-              OR LOWER(COALESCE(p.status_pedido,'')) IN ('processing','approved','complete') THEN TRUE
-            ELSE FALSE END,
+       core.magento_pagamento_confirmado(p.estado_pedido,p.status_pedido),
        p.subtotal, p.desconto,
        CASE WHEN p.subtotal IS NOT NULL AND p.desconto IS NOT NULL
             THEN p.subtotal + p.desconto END,
@@ -119,7 +94,7 @@ SELECT 'magento', p.pedido_id, p.protocolo, p.cliente_id::TEXT,
                p.estado_pedido,p.status_pedido,p.subtotal,p.desconto,
                p.frete,p.imposto,p.valor_total)::TEXT)
 FROM staging.magento_pedido p
-WHERE p.pedido_id BETWEEN :id_min AND :id_max
+WHERE p.pedido_id BETWEEN core.batch_min() AND core.batch_max()
 ON CONFLICT (origem, pedido_id_origem) DO UPDATE SET
     protocolo=EXCLUDED.protocolo, comprador_id_origem=EXCLUDED.comprador_id_origem,
     data_pedido=EXCLUDED.data_pedido, data_pedido_original=EXCLUDED.data_pedido_original,
@@ -140,6 +115,26 @@ ON CONFLICT (origem, pedido_id_origem) DO UPDATE SET
     conteudo_hash=EXCLUDED.conteudo_hash,
     atualizado_core_em=clock_timestamp()
 WHERE core.fato_pedido.conteudo_hash IS DISTINCT FROM EXCLUDED.conteudo_hash;
+
+-- Alertas têm apenas PK numérica e código controlado. Sem texto de driver/PII.
+INSERT INTO core.core_alerta_qualidade
+    (batch_id, origem, entidade, identificador_origem, codigo_regra, severidade)
+SELECT p.batch_id, 'magento', 'pedido', p.pedido_id,
+       core.magento_status_alerta(p.estado_pedido,p.status_pedido), 'WARNING'
+FROM staging.magento_pedido p
+WHERE p.pedido_id BETWEEN core.batch_min() AND core.batch_max()
+  AND core.magento_status_alerta(p.estado_pedido,p.status_pedido) IS NOT NULL
+ON CONFLICT DO NOTHING;
+
+UPDATE core.core_alerta_qualidade a
+SET ativo=FALSE, resolvido_em=clock_timestamp()
+FROM staging.magento_pedido p
+WHERE a.origem='magento' AND a.entidade='pedido'
+  AND a.identificador_origem=p.pedido_id AND a.ativo
+  AND a.codigo_regra IN ('STATUS_CONTRADITORIO','STATUS_ESPECIAL')
+  AND p.pedido_id BETWEEN core.batch_min() AND core.batch_max()
+  AND a.codigo_regra IS DISTINCT FROM
+      core.magento_status_alerta(p.estado_pedido,p.status_pedido);
 COMMIT;
 
 -- ETAPA 2B: pedidos Ativo. Totais financeiros permanecem NULL até prova de
@@ -152,7 +147,7 @@ INSERT INTO core.fato_pedido
      status_pedido_codigo, local_inscricao_codigo, status_corporativo,
      flag_cancelado, pagamento_confirmado, desconto_pedido_origem,
      batch_id_origem, conteudo_hash)
-SELECT 'ativo', p.pedido_id, p.codigo, p.comprador_usuario_id::TEXT,
+SELECT 'ativo', p.pedido_id, p.codigo, p.comprador_usuario_id::BIGINT,
        core.try_timestamp(p.data_pedido), p.data_pedido,
        core.try_timestamp(p.data_alteracao), p.data_alteracao,
        p.status, p.status_id, p.local_inscricao_codigo,
@@ -166,7 +161,7 @@ SELECT 'ativo', p.pedido_id, p.codigo, p.comprador_usuario_id::TEXT,
                p.data_alteracao,p.status_id,p.local_inscricao_codigo,
                p.desconto)::TEXT)
 FROM staging.ativo_pedido p
-WHERE p.pedido_id BETWEEN :id_min AND :id_max
+WHERE p.pedido_id BETWEEN core.batch_min() AND core.batch_max()
 ON CONFLICT (origem, pedido_id_origem) DO UPDATE SET
     protocolo=EXCLUDED.protocolo, comprador_id_origem=EXCLUDED.comprador_id_origem,
     data_pedido=EXCLUDED.data_pedido, data_pedido_original=EXCLUDED.data_pedido_original,

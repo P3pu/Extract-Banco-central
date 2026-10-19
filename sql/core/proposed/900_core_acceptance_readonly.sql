@@ -95,10 +95,103 @@ SELECT origem, COUNT(*) AS pedidos,
 FROM core.fato_pedido GROUP BY origem;
 SELECT origem, COUNT(*) AS inscricoes,
        SUM(valor_bruto_inscricao) AS bruto_inscricoes,
-       SUM(valor_liquido_inscricao) AS liquido_inscricoes,
        COUNT(*) FILTER (WHERE flag_pedido_nao_encontrado) AS orfas,
-       COUNT(*) FILTER (WHERE flag_evento_nao_mapeado) AS sem_evento
+       COUNT(*) FILTER (WHERE flag_evento_nao_mapeado) AS sem_evento,
+       COUNT(*) FILTER (WHERE estado_derivacao='PENDENTE') AS derivacao_pendente
 FROM core.fato_inscricao GROUP BY origem;
+SELECT origem, COUNT(*) AS inscricoes_validadas,
+       SUM(valor_liquido_inscricao) AS liquido_validado
+FROM core.fato_inscricao_indicadores_validos GROUP BY origem;
+
+-- B01: o UPSERT básico não apaga classificação/financeiro, mas invalida a
+-- publicação quando o hash da base muda. Nenhum VALIDADO pode ter hash velho.
+SELECT COUNT(*) AS validado_com_hash_antigo
+FROM core.fato_inscricao
+WHERE estado_derivacao='VALIDADO'
+  AND derivado_de_hash IS DISTINCT FROM conteudo_hash;
+-- Em homologação, fotografar um lote com derivados validados, alterar uma
+-- fonte básica controlada e repetir 005. Os valores financeiros/classificação
+-- devem permanecer iguais na tabela, a linha deve ficar PENDENTE e sumir da
+-- view válida. Restaurar a fonte e reconciliar; não fazer UPDATE em produção.
+SELECT origem,
+       COUNT(*) FILTER (WHERE estado_derivacao='PENDENTE'
+                         AND (valor_liquido_inscricao IS NOT NULL
+                              OR classificacao_venda IS NOT NULL))
+           AS derivados_preservados_pendentes,
+       COUNT(*) FILTER (WHERE estado_derivacao='VALIDADO'
+                         AND derivado_de_hash=conteudo_hash)
+           AS derivados_validos
+FROM core.fato_inscricao
+WHERE pedido_id_origem BETWEEN core.batch_min() AND core.batch_max()
+GROUP BY origem;
+
+-- B02: matriz Magento fechada. Zero linhas = todos os casos esperados.
+WITH casos(estado,status,esperado,pago,alerta) AS (VALUES
+    ('processing','approved','CONFIRMADO',TRUE,NULL::TEXT),
+    ('complete','complete','CONFIRMADO',TRUE,NULL),
+    ('new','new','NOVO',FALSE,NULL),
+    ('pending','pending','PENDENTE',FALSE,NULL),
+    ('new','pending','PENDENTE',FALSE,NULL),
+    ('new','approved','INDETERMINADO',NULL::BOOLEAN,'STATUS_CONTRADITORIO'),
+    ('processing','new','INDETERMINADO',NULL,'STATUS_CONTRADITORIO'),
+    ('processing','canceled','CANCELADO',FALSE,'STATUS_CONTRADITORIO'),
+    ('canceled','approved','CANCELADO',FALSE,'STATUS_CONTRADITORIO'),
+    ('canceled','pending','CANCELADO',FALSE,'STATUS_CONTRADITORIO'),
+    ('closed','complete','INDETERMINADO',NULL,'STATUS_ESPECIAL'),
+    (NULL,'approved','INDETERMINADO',NULL,'STATUS_ESPECIAL')
+)
+SELECT estado,status,esperado,pago,alerta
+FROM casos
+WHERE core.magento_status_corporativo(estado,status) IS DISTINCT FROM esperado
+   OR core.magento_pagamento_confirmado(estado,status) IS DISTINCT FROM pago
+   OR core.magento_status_alerta(estado,status) IS DISTINCT FROM alerta;
+
+-- B03: precedência de classificação. Cupom Ativo Grupos vence valor zero e
+-- Cortesia. Cabeçalho de cupom ausente não autoriza Site/Cortesia por exclusão.
+WITH casos(tipo_cupom,categoria,codigo,preco,tem_ref,tem_header,esperado) AS (VALUES
+    ('Grupos','Cortesia','XX',0::NUMERIC,TRUE,TRUE,'Grupos'),
+    ('Parceiros','Grupo de corrida','XX',10::NUMERIC,TRUE,TRUE,'Grupos'),
+    ('Cortesia Faturada',NULL,'XX',10::NUMERIC,TRUE,TRUE,'Site'),
+    (NULL,'Cortesia','XX',0::NUMERIC,TRUE,FALSE,NULL::TEXT),
+    (NULL,'Cortesia','GR123',0::NUMERIC,TRUE,FALSE,'Grupos'),
+    (NULL,NULL,NULL,0::NUMERIC,FALSE,FALSE,'Cortesia'),
+    (NULL,NULL,NULL,10::NUMERIC,FALSE,FALSE,'Site')
+)
+SELECT * FROM casos
+WHERE core.classificacao_ativo(tipo_cupom,categoria,codigo,preco,
+                               tem_ref,tem_header) IS DISTINCT FROM esperado;
+WITH casos(grupo,cortesia,cupom,bruto,esperado) AS (VALUES
+    (TRUE,TRUE,'XX',0::NUMERIC,'Grupos'),
+    (FALSE,TRUE,'XX',10::NUMERIC,'Cortesia'),
+    (FALSE,FALSE,'GR123',0::NUMERIC,'Grupos'),
+    (FALSE,FALSE,NULL,10::NUMERIC,'Site')
+)
+SELECT * FROM casos
+WHERE core.classificacao_magento(grupo,cortesia,cupom,bruto)
+      IS DISTINCT FROM esperado;
+
+-- B04: proteção estrutural de PII; saída somente com nomes/tipos de colunas.
+SELECT table_name,column_name,data_type
+FROM information_schema.columns
+WHERE table_schema='core'
+  AND ((table_name='core_alerta_qualidade'
+        AND column_name IN ('identificador_origem','mensagem'))
+       OR (table_name='core_etl_execucao'
+           AND column_name IN ('erro_codigo','erro_resumido'))
+       OR (table_name='dim_pessoa' AND column_name='cpf_token_seguro'))
+ORDER BY table_name,column_name;
+-- Esperado: identificador_origem=bigint; mensagem/erro_resumido ausentes;
+-- erro_codigo=text; cpf_token_seguro=bytea. Não ler valores pessoais.
+
+-- B05: cobertura de alertas Magento contraditórios, apenas agregados.
+SELECT codigo_regra, COUNT(*) AS alertas_ativos
+FROM core.core_alerta_qualidade
+WHERE origem='magento' AND entidade='pedido' AND ativo
+  AND codigo_regra IN ('STATUS_CONTRADITORIO','STATUS_ESPECIAL')
+GROUP BY codigo_regra;
+
+-- B06: limites pgAdmin/executor da mesma sessão; falhar se não definidos.
+SELECT core.batch_min() AS id_min, core.batch_max() AS id_max;
 
 -- T16: primeiro EXPLAIN (sem ANALYZE) os SELECTs de 004 com intervalo
 -- pequeno de pedido_id; verificar índice no filtro e pré-agregações. A
