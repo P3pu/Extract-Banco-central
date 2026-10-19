@@ -185,13 +185,23 @@ CREATE TABLE core.fato_inscricao (
     estado_derivacao TEXT NOT NULL DEFAULT 'PENDENTE'
         CHECK (estado_derivacao IN ('PENDENTE', 'VALIDADO', 'BLOQUEADO')),
     derivado_de_hash TEXT,
+    -- Reservados para o reconciliador de dependências, ainda não implementado.
+    -- O hash básico NÃO cobre status, finanças, cupom, cadastros ou regras.
+    dependencias_hash_snapshot TEXT,
+    derivado_de_dependencias_hash TEXT,
+    versao_regras_derivacao TEXT,
     derivado_em DATE,
     batch_id_origem UUID,
     conteudo_hash TEXT NOT NULL,
     atualizado_core_em TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
     CONSTRAINT fato_inscricao_derivacao_checagem CHECK (
         estado_derivacao <> 'VALIDADO'
-        OR (derivado_de_hash = conteudo_hash AND derivado_em IS NOT NULL)
+        OR (derivado_de_hash IS NOT NULL AND derivado_de_hash = conteudo_hash
+            AND dependencias_hash_snapshot IS NOT NULL
+            AND derivado_de_dependencias_hash IS NOT NULL
+            AND derivado_de_dependencias_hash = dependencias_hash_snapshot
+            AND versao_regras_derivacao IS NOT NULL
+            AND derivado_em IS NOT NULL)
     ),
     CONSTRAINT fato_inscricao_origem_uk UNIQUE (origem, inscricao_id_origem)
 );
@@ -251,8 +261,14 @@ REVOKE ALL ON core.dim_pessoa, core.pessoa_source_map FROM PUBLIC;
 
 CREATE VIEW core.fato_inscricao_indicadores_validos AS
 SELECT * FROM core.fato_inscricao
-WHERE estado_derivacao = 'VALIDADO'
+-- Gate fechado nesta proposta: não há reconciliador de TODAS as dependências.
+-- Remover FALSE somente em migração aprovada, após invalidação transacional,
+-- versionamento de regras e teste de mudanças em fontes auxiliares.
+WHERE FALSE
+  AND estado_derivacao = 'VALIDADO'
   AND derivado_de_hash = conteudo_hash
+  AND derivado_de_dependencias_hash = dependencias_hash_snapshot
+  AND versao_regras_derivacao IS NOT NULL
   AND (data_evento IS NULL
        OR pagamento_confirmado IS TRUE
        OR pagamento_presumido IS TRUE

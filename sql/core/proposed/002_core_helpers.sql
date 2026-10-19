@@ -109,7 +109,8 @@ BEGIN
     END IF;
     minimo := texto_min::BIGINT;
     maximo := texto_max::BIGINT;
-    IF minimo > maximo OR maximo - minimo > 100000 THEN
+    -- BETWEEN inclui as duas extremidades: 100000 IDs = diferença 99999.
+    IF minimo > maximo OR maximo - minimo >= 100000 THEN
         RAISE EXCEPTION 'Intervalo CORE invertido ou maior que 100000 IDs';
     END IF;
     RETURN minimo;
@@ -124,12 +125,19 @@ BEGIN
     RETURN current_setting('core.id_max')::BIGINT;
 END $$;
 
+CREATE OR REPLACE FUNCTION core.cupom_ativo_e_grupos(classificacao TEXT)
+RETURNS BOOLEAN LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+    SELECT COALESCE(
+        LOWER(REGEXP_REPLACE(BTRIM(classificacao), '[[:space:]]+', ' ', 'g'))
+            = 'grupos', FALSE)
+$$;
+
 CREATE OR REPLACE FUNCTION core.classificacao_ativo(
     classificacao_cupom TEXT, categoria TEXT, codigo_cupom TEXT,
     preco NUMERIC, tem_referencia_cupom BOOLEAN, tem_cabecalho_cupom BOOLEAN)
 RETURNS TEXT LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
     SELECT CASE
-        WHEN classificacao_cupom ILIKE '%grupos%'
+        WHEN core.cupom_ativo_e_grupos(classificacao_cupom)
           OR categoria ILIKE '%grupo%'
           OR categoria ILIKE '%saúde corporativa%'
           OR categoria ILIKE '%saude corporativa%'

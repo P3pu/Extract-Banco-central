@@ -138,7 +138,10 @@ WHERE a.origem='magento' AND a.entidade='pedido'
 COMMIT;
 
 -- ETAPA 2B: pedidos Ativo. Totais financeiros permanecem NULL até prova de
--- cobertura completa das inscrições. Comprador depende de 000 + backfill.
+-- cobertura completa das inscrições. staging.ativo_pedido ainda não expõe
+-- sa_pedido.id_usuario: comprador_id_origem fica NULL até 000 + backfill
+-- aprovados nos registros novos. Em conflito, preservar eventual comprador
+-- já validado por backfill separado. Nunca usar participante como comprador.
 BEGIN;
 INSERT INTO core.fato_pedido
     (origem, pedido_id_origem, protocolo, comprador_id_origem,
@@ -147,7 +150,7 @@ INSERT INTO core.fato_pedido
      status_pedido_codigo, local_inscricao_codigo, status_corporativo,
      flag_cancelado, pagamento_confirmado, desconto_pedido_origem,
      batch_id_origem, conteudo_hash)
-SELECT 'ativo', p.pedido_id, p.codigo, p.comprador_usuario_id::BIGINT,
+SELECT 'ativo', p.pedido_id, p.codigo, NULL::BIGINT,
        core.try_timestamp(p.data_pedido), p.data_pedido,
        core.try_timestamp(p.data_alteracao), p.data_alteracao,
        p.status, p.status_id, p.local_inscricao_codigo,
@@ -157,13 +160,13 @@ SELECT 'ativo', p.pedido_id, p.codigo, p.comprador_usuario_id::BIGINT,
        CASE WHEN p.status_id = 5 THEN FALSE WHEN p.status_id = 2 THEN TRUE
             WHEN p.status_id IN (1,6) THEN FALSE ELSE NULL END,
        p.desconto, p.batch_id,
-       md5(ROW(p.pedido_id,p.comprador_usuario_id,p.data_pedido,
+       md5(ROW(p.pedido_id,p.data_pedido,
                p.data_alteracao,p.status_id,p.local_inscricao_codigo,
                p.desconto)::TEXT)
 FROM staging.ativo_pedido p
 WHERE p.pedido_id BETWEEN core.batch_min() AND core.batch_max()
 ON CONFLICT (origem, pedido_id_origem) DO UPDATE SET
-    protocolo=EXCLUDED.protocolo, comprador_id_origem=EXCLUDED.comprador_id_origem,
+    protocolo=EXCLUDED.protocolo,
     data_pedido=EXCLUDED.data_pedido, data_pedido_original=EXCLUDED.data_pedido_original,
     data_atualizacao_origem=EXCLUDED.data_atualizacao_origem,
     data_atualizacao_original=EXCLUDED.data_atualizacao_original,

@@ -103,8 +103,8 @@ SELECT origem, COUNT(*) AS inscricoes_validadas,
        SUM(valor_liquido_inscricao) AS liquido_validado
 FROM core.fato_inscricao_indicadores_validos GROUP BY origem;
 
--- B01: o UPSERT básico não apaga classificação/financeiro, mas invalida a
--- publicação quando o hash da base muda. Nenhum VALIDADO pode ter hash velho.
+-- B01: o UPSERT básico não apaga classificação/financeiro, mas marca PENDENTE
+-- quando a base muda. O gate da view continua fechado para TODAS as linhas.
 SELECT COUNT(*) AS validado_com_hash_antigo
 FROM core.fato_inscricao
 WHERE estado_derivacao='VALIDADO'
@@ -152,6 +152,10 @@ WITH casos(tipo_cupom,categoria,codigo,preco,tem_ref,tem_header,esperado) AS (VA
     ('Grupos','Cortesia','XX',0::NUMERIC,TRUE,TRUE,'Grupos'),
     ('Parceiros','Grupo de corrida','XX',10::NUMERIC,TRUE,TRUE,'Grupos'),
     ('Cortesia Faturada',NULL,'XX',10::NUMERIC,TRUE,TRUE,'Site'),
+    (' GrUpOs  ',NULL,'XX',10::NUMERIC,TRUE,TRUE,'Grupos'),
+    ('Supergrupos',NULL,'XX',10::NUMERIC,TRUE,TRUE,'Site'),
+    ('Não Grupos',NULL,'XX',10::NUMERIC,TRUE,TRUE,'Site'),
+    ('Grupos VIP',NULL,'XX',10::NUMERIC,TRUE,TRUE,'Site'),
     (NULL,'Cortesia','XX',0::NUMERIC,TRUE,FALSE,NULL::TEXT),
     (NULL,'Cortesia','GR123',0::NUMERIC,TRUE,FALSE,'Grupos'),
     (NULL,NULL,NULL,0::NUMERIC,FALSE,FALSE,'Cortesia'),
@@ -192,6 +196,23 @@ GROUP BY codigo_regra;
 
 -- B06: limites pgAdmin/executor da mesma sessão; falhar se não definidos.
 SELECT core.batch_min() AS id_min, core.batch_max() AS id_max;
+-- Testar separadamente: [1,100000] aceita; [1,100001] rejeita.
+
+-- B07: gate de derivados fechado nesta versão. Esperado: zero, inclusive se
+-- algum registro da tabela base estiver VALIDADO. Não ler dados pessoais.
+SELECT COUNT(*) AS indicadores_publicados
+FROM core.fato_inscricao_indicadores_validos;
+
+-- B08: casos de invalidação para homologação FUTURA, após reconciliador e
+-- derivador aprovados. Em cada cenário, alterar uma linha de teste, reconciliar
+-- atomicamente e verificar que a inscrição sai da view antes de qualquer
+-- recálculo. Depois restaurar a linha e repetir; nunca testar em produção.
+-- Magento: state/status; qty cancelada/reembolsada; desconto do filho, pai e
+-- cabeçalho; cupom e etiqueta/regra. Ativo: classificação/código de cupom,
+-- categoria e valor do kit, status detalhado. Ambas: cadastro de evento,
+-- mapeamento, combo e versão de regras. Incluir INSERT/DELETE de filho/regra,
+-- falha de fonte, lote repetido e virada do dia em America/Sao_Paulo.
+-- Critério: nenhuma alteração acima deixa indicador obsoleto publicado.
 
 -- T16: primeiro EXPLAIN (sem ANALYZE) os SELECTs de 004 com intervalo
 -- pequeno de pedido_id; verificar índice no filtro e pré-agregações. A

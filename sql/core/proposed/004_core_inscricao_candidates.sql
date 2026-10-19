@@ -144,7 +144,8 @@ SELECT i.pedido_id, i.inscricao_id, fp.pedido_key,
                                 i.cupom_individual_id IS NOT NULL,
                                 cab.cupom_desconto_id IS NOT NULL)
            AS classificacao_candidata,
-       CASE WHEN cab.classificacao ILIKE '%grupos%' THEN 'CUPOM_CLASSIFICACAO_GRUPOS'
+       CASE WHEN core.cupom_ativo_e_grupos(cab.classificacao)
+                 THEN 'CUPOM_CLASSIFICACAO_GRUPOS'
             WHEN i.categoria ILIKE '%grupo%'
               OR i.categoria ILIKE '%saúde corporativa%'
               OR i.categoria ILIKE '%saude corporativa%' THEN 'CATEGORIA_GRUPOS'

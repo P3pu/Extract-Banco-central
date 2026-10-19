@@ -21,7 +21,7 @@ Execute um bloco lógico/uma transação de cada vez, na ordem descrita em
 `docs/CORE_FASE_B_MODELO.md`. Os filtros por pedido em `004`/`005` mantêm
 todos os bundles de um pedido no mesmo lote. **Não** execute a história toda
 numa faixa única. O helper falha se parâmetros faltarem, forem inválidos,
-invertidos ou cobrirem mais de 100.000 IDs. Sessões pgAdmin diferentes não
+invertidos ou cobrirem mais de 100.000 IDs inclusivos (`max - min <= 99999`). Sessões pgAdmin diferentes não
 compartilham esses valores; confirme a faixa antes de cada bloco. Ao terminar:
 
 ```sql
@@ -32,11 +32,12 @@ RESET core.id_max;
 `004` contém apenas candidatos de transformação; depende das views opcionais
 de `000` e não escreve na CORE. `005` grava somente dados básicos. Se a base
 mudar, preserva os indicadores derivados antigos, mas define
-`estado_derivacao='PENDENTE'`. Consumidores de métricas devem ler exclusivamente
-`core.fato_inscricao_indicadores_validos`, que exige hash da base validado.
-Inscrições ainda pendentes calculadas antes/no dia do evento deixam de ser
-publicadas no dia seguinte ao evento em São Paulo até recálculo. Nenhum job
-derivado foi implementado.
+`estado_derivacao='PENDENTE'`. O hash básico não abrange todas as dependências
+dos indicadores. Por segurança, `core.fato_inscricao_indicadores_validos` está
+**fechada por `WHERE FALSE` e retorna zero linhas**. Nenhum job derivado ou
+reconciliador de dependências foi implementado. O contrato de fingerprint,
+invalidação transacional, versão de regras e reabertura futura do gate está em
+`docs/CORE_FASE_B_MODELO.md`. Não usar derivados da tabela base para métricas.
 
 ## Alertas e PII
 

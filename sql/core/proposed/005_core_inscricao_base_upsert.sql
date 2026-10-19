@@ -9,28 +9,29 @@
 BEGIN;
 WITH fonte AS MATERIALIZED (
     SELECT 'ativo'::TEXT AS origem, i.inscricao_id::BIGINT AS inscricao_id_origem,
-           i.pedido_id::BIGINT AS pedido_id_origem, fp.pedido_key,
-           i.evento_id::BIGINT AS evento_id_origem, em.evento_key,
+           i.pedido_id::BIGINT AS pedido_id_origem, fp.pedido_key::BIGINT AS pedido_key,
+           i.evento_id::BIGINT AS evento_id_origem, em.evento_key::BIGINT AS evento_key,
            i.usuario_id::BIGINT AS participante_id_origem,
-           combo.combo_key, core.try_date(i.data_evento) AS data_evento,
-           i.data_evento AS data_evento_original,
-           i.campanha_salesforce_id AS sku_evento_origem,
+           combo.combo_key::BIGINT AS combo_key,
+           core.try_date(i.data_evento)::DATE AS data_evento,
+           i.data_evento::TEXT AS data_evento_original,
+           i.campanha_salesforce_id::TEXT AS sku_evento_origem,
            NULL::TEXT AS sku_inscricao_magento,
            i.modalidade_id::TEXT AS modalidade_id_origem,
-           i.modalidade AS modalidade_origem,
+           i.modalidade::TEXT AS modalidade_origem,
            i.categoria_id::TEXT AS categoria_id_origem,
-           i.categoria AS categoria_nome_origem,
+           i.categoria::TEXT AS categoria_nome_origem,
            i.tamanho_camiseta_id::TEXT AS tamanho_id_origem,
-           i.tamanho_camiseta AS tamanho_origem,
-           i.status_pedido AS status_pedido_origem,
-           i.status_detalhado_id AS status_individual_codigo,
+           i.tamanho_camiseta::TEXT AS tamanho_origem,
+           i.status_pedido::TEXT AS status_pedido_origem,
+           i.status_detalhado_id::INTEGER AS status_individual_codigo,
            i.preco::NUMERIC(20,4) AS valor_bruto_inscricao,
-           i.desconto_individual AS desconto_individual_original,
+           i.desconto_individual::TEXT AS desconto_individual_original,
            i.taxa::NUMERIC(20,4) AS taxa_servico_ativo,
-           de.flag_evento_teste,
-           fp.pedido_key IS NULL AS flag_pedido_nao_encontrado,
-           em.evento_key IS NULL AS flag_evento_nao_mapeado,
-           i.batch_id AS batch_id_origem
+           de.flag_evento_teste::BOOLEAN AS flag_evento_teste,
+           (fp.pedido_key IS NULL)::BOOLEAN AS flag_pedido_nao_encontrado,
+           (em.evento_key IS NULL)::BOOLEAN AS flag_evento_nao_mapeado,
+           i.batch_id::UUID AS batch_id_origem
     FROM staging.ativo_inscricao i
     LEFT JOIN core.fato_pedido fp
       ON fp.origem='ativo' AND fp.pedido_id_origem=i.pedido_id
@@ -42,19 +43,19 @@ WITH fonte AS MATERIALIZED (
       ON combo.origem='ativo' AND combo.combo_id_origem=ap.combo_id::TEXT
     WHERE i.pedido_id BETWEEN core.batch_min() AND core.batch_max()
     UNION ALL
-    SELECT 'magento', i.inscricao_id::BIGINT,
-           i.pedido_id::BIGINT, fp.pedido_key,
-           i.evento_id::BIGINT, em.evento_key,
-           NULL::TEXT, NULL::BIGINT, i.data_evento::DATE,
-           i.data_evento::TEXT, i.evento_sku, i.sku_inscricao,
-           NULL::TEXT, i.modalidade,
+    SELECT 'magento'::TEXT, i.inscricao_id::BIGINT,
+           i.pedido_id::BIGINT, fp.pedido_key::BIGINT,
+           i.evento_id::BIGINT, em.evento_key::BIGINT,
+           NULL::BIGINT, NULL::BIGINT, i.data_evento::DATE,
+           i.data_evento::TEXT, i.evento_sku::TEXT, i.sku_inscricao::TEXT,
+           NULL::TEXT, i.modalidade::TEXT,
            i.categoria_origem::TEXT, NULL::TEXT,
-           NULL::TEXT, i.tamanho,
-           i.status_pedido, NULL::INTEGER,
+           NULL::TEXT, i.tamanho::TEXT,
+           i.status_pedido::TEXT, NULL::INTEGER,
            i.valor_bruto::NUMERIC(20,4), NULL::TEXT, NULL::NUMERIC(20,4),
-           de.flag_evento_teste,
-           fp.pedido_key IS NULL, em.evento_key IS NULL,
-           i.batch_id
+           de.flag_evento_teste::BOOLEAN,
+           (fp.pedido_key IS NULL)::BOOLEAN, (em.evento_key IS NULL)::BOOLEAN,
+           i.batch_id::UUID
     FROM staging.magento_inscricao i
     LEFT JOIN core.fato_pedido fp
       ON fp.origem='magento' AND fp.pedido_id_origem=i.pedido_id
