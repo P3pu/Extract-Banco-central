@@ -19,6 +19,27 @@ EXPECTED = {
 }
 
 
+def diagnostic_queries(name: str, *, plan: bool) -> list[str]:
+    """Extrai somente os SELECTs de dados, ignorando comentários e EXPLAIN."""
+    sql = (DIAG / name).read_text(encoding="utf-8")
+    body = "\n".join(line for line in sql.splitlines()
+                     if not line.lstrip().startswith("--"))
+    guard_end = re.search(r"\bAS destino_(?:validado|e_intervalo_validados);", body)
+    if guard_end is None:
+        raise AssertionError(f"Guarda ausente em {name}")
+    tail = body[guard_end.end():body.rindex("COMMIT;")]
+    statements = [statement.strip() for statement in tail.split(";")
+                  if statement.strip()]
+    prefix = "EXPLAIN (FORMAT TEXT, COSTS TRUE)"
+    if plan:
+        if not all(statement.startswith(prefix) for statement in statements):
+            raise AssertionError(f"Plano sem EXPLAIN completo em {name}")
+        statements = [statement[len(prefix):].strip() for statement in statements]
+    elif any(statement.startswith(prefix) for statement in statements):
+        raise AssertionError(f"Consulta de dados contém EXPLAIN em {name}")
+    return [statement.strip() for statement in statements]
+
+
 class CoreC2StaticTests(unittest.TestCase):
     def test_all_diagnostics_are_read_only_and_fail_closed(self):
         self.assertEqual({p.name for p in DIAG.glob("*.sql")}, EXPECTED)
@@ -83,7 +104,7 @@ class CoreC2StaticTests(unittest.TestCase):
 
     def test_plan_files_are_explain_only_after_guard(self):
         counts = {
-            "c2_magento_items_plan_readonly.sql": 1,
+            "c2_magento_items_plan_readonly.sql": 2,
             "c2_ativo_range_plan_readonly.sql": 1,
             "c2_quality_plan_readonly.sql": 4,
         }
@@ -92,6 +113,35 @@ class CoreC2StaticTests(unittest.TestCase):
                 sql = (DIAG / name).read_text(encoding="utf-8")
                 self.assertEqual(sql.count("EXPLAIN (FORMAT TEXT, COSTS TRUE)"), expected)
                 self.assertLess(sql.index("destino_"), sql.index("EXPLAIN ("))
+
+    def test_every_plan_matches_the_effective_data_query(self):
+        pairs = {
+            "magento_items": 2,
+            "ativo_range": 1,
+            "quality": 4,
+        }
+        for stem, expected_count in pairs.items():
+            with self.subTest(stem=stem):
+                actual = diagnostic_queries(
+                    f"c2_{stem}_after_plan_readonly.sql", plan=False)
+                explained = diagnostic_queries(
+                    f"c2_{stem}_plan_readonly.sql", plan=True)
+                self.assertEqual(len(actual), expected_count)
+                self.assertEqual(explained, actual)
+                self.assertEqual(len(set(actual)), expected_count)
+        magento = diagnostic_queries("c2_magento_items_plan_readonly.sql", plan=True)
+        self.assertIn("por_bundle AS", magento[0])
+        self.assertIn("GROUP BY p.pedido_id", magento[0])
+        self.assertIn("LEFT JOIN staging.magento_pedido", magento[0])
+        self.assertIn("ORDER BY pedido_id, item_pai_id", magento[1])
+        quality = diagnostic_queries("c2_quality_plan_readonly.sql", plan=True)
+        for query, marker in zip(quality, (
+            "FROM staging.magento_inscricao",
+            "FROM staging.magento_pedido_regra",
+            "LEFT JOIN staging.ativo_cupom",
+            "FROM staging.ativo_pagamento",
+        )):
+            self.assertIn(marker, query)
 
     def test_matrix_is_unobserved_and_gate_remains_closed(self):
         matrix = (ROOT / "docs" / "CORE_FASE_C2_MATRIZ.md").read_text(encoding="utf-8")

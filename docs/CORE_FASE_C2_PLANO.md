@@ -18,8 +18,9 @@ Executar **um arquivo por vez**; não enviar toda a pasta ao pgAdmin.
    por PK; sem leitura de cadastro pessoal.
 2. `c2_magento_header_readonly.sql`: quatro cabeçalhos por PK, status e
    comparação com os líquidos/residuais documentados.
-3. `c2_magento_items_plan_readonly.sql`: somente `EXPLAIN` da seleção de itens
-   dos quatro pedidos. Revisar o plano antes de autorizar
+3. `c2_magento_items_plan_readonly.sql`: dois `EXPLAIN` distintos, da
+   reconciliação completa por bundle (CTEs, joins, agregações e filtros) e da
+   seleção detalhada dos quatro pedidos. Revisar **ambos** antes de autorizar
    `c2_magento_items_after_plan_readonly.sql`.
 4. Para Ativo, escolher **um intervalo de até 1.000 IDs de inscrição** a partir
    de critério de amostragem aprovado. Substituir `UNSET` em
@@ -27,9 +28,11 @@ Executar **um arquivo por vez**; não enviar toda a pasta ao pgAdmin.
    usar exatamente o mesmo intervalo em `c2_ativo_range_after_plan_readonly.sql`.
    O intervalo é por `inscricao_id`, não por `pedido_id`; zero linhas é
    `NAO_COBERTO`, não sucesso.
-5. `c2_quality_plan_readonly.sql`: quatro `EXPLAIN` para views complexas e
-   pagamentos, usando o mesmo intervalo Ativo. Só depois de revisar todos os
-   planos e aprovar custo, executar `c2_quality_after_plan_readonly.sql`.
+5. `c2_quality_plan_readonly.sql`: quatro `EXPLAIN` das quatro consultas
+   efetivas (cardinalidade Magento, regras Magento, sinais Ativo e tentativas
+   de pagamento), com as mesmas CTEs, joins, agregações e filtros do arquivo
+   de dados. Só depois de revisar **cada** plano e aprovar custo, executar
+   `c2_quality_after_plan_readonly.sql`.
 
 Em caso de erro ou timeout, **parar** e registrar o SQLSTATE/arquivo; não
 aumentar timeout, expandir intervalo ou substituir view por scan RAW sem
@@ -79,17 +82,31 @@ estimado real nesta preparação; é obrigatório revisar os planos no Naruto.
 
 | Consulta de dados | EXPLAIN prévio | Risco a revisar |
 | --- | --- | --- |
-| Itens Magento e pais/filhos | `c2_magento_items_plan_readonly.sql` | Scan de itens por `pedido_id`; duas leituras no arquivo de dados. |
+| Reconciliação por bundle Magento | `c2_magento_items_plan_readonly.sql`, plano 1 | Scan de itens por `pedido_id`, materialização, agrupamentos por pai/pedido e join ao cabeçalho. |
+| Detalhe de itens Magento | `c2_magento_items_plan_readonly.sql`, plano 2 | Nova leitura dos itens e ordenação dos IDs pai/filho. |
 | Inscrições Ativo por intervalo | `c2_ativo_range_plan_readonly.sql` | Pushdown da PK através de joins STAGING; categoria. |
-| `magento_inscricao` | `c2_quality_plan_readonly.sql` | Mapeamento produto/evento e CTEs EAV potencialmente globais. |
-| `magento_pedido_regra` | `c2_quality_plan_readonly.sql` | Tokenização e escolha de etiqueta na view. |
-| Cupom Ativo | `c2_quality_plan_readonly.sql` | Join para RAW historicamente seletiva. |
-| Pagamentos Ativo | `c2_quality_plan_readonly.sql` | Relação por `pedido_id` sem índice declarado, possível scan amplo. |
+| Cardinalidade `magento_inscricao` | `c2_quality_plan_readonly.sql`, plano 1 | Mapeamento produto/evento, CTEs EAV e agregação por pedido. |
+| Regras e classificação Magento | `c2_quality_plan_readonly.sql`, plano 2 | Tokenização, escolha de etiqueta e agregação por pedido. |
+| Sinais/cupom Ativo | `c2_quality_plan_readonly.sql`, plano 3 | Join para RAW historicamente seletiva e agregação da amostra. |
+| Pagamentos Ativo | `c2_quality_plan_readonly.sql`, plano 4 | Relação por `pedido_id` sem índice declarado, CTE de pedidos e agregação por status. |
 
-Se um plano apontar `Seq Scan` grande, `Sort`/`Hash` de milhões de linhas,
-spill estimado ou custo desproporcional, classificar a consulta de dados como
-`NAO_COBERTO` por enquanto e propor alternativa/indexação em fase separada.
-Não criar índice nesta fase.
+**Aprovação objetiva de cada plano:** registrar banco, versão, commit dos
+scripts, intervalo Ativo (quando aplicável), número de nós/linhas estimadas,
+custo total estimado e operações mais caras. Confirmar que o filtro por quatro
+pedidos ou por até 1.000 IDs chega às relações-base antes de joins/agrupamentos;
+verificar separadamente leituras repetidas, `Seq Scan` em tabelas grandes,
+`Sort`/`Hash` volumosos, materialização e necessidade potencial de memória.
+Comparar o SQL planejado ao SQL de dados do **mesmo commit**; o teste estático
+`test_every_plan_matches_the_effective_data_query` exige igualdade textual da
+consulta após retirar somente `EXPLAIN`, comentários e espaço externo. Plano
+simplificado, intervalo diferente ou mudança posterior no SQL **invalida** a
+aprovação. `statement_timeout` não substitui avaliação de custo.
+
+Se não for possível justificar custo e cardinalidade de **todos os planos de um
+arquivo de dados**, não executar esse arquivo: marcar o cenário `NAO_COBERTO`,
+registrar o plano e propor alternativa em revisão separada. Em particular,
+um `Seq Scan` grande, `Sort`/`Hash` de milhões de linhas ou custo
+desproporcional exige nova decisão explícita. Não criar índice nesta fase.
 
 ## Dependências não resolvidas
 
