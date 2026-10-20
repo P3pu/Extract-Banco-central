@@ -16,6 +16,16 @@ assert_local() {
   esac
 }
 
+assert_fresh_schema() {
+  existing="$(psql -X -A -t -v ON_ERROR_STOP=1 \
+    -h /var/run/postgresql -U core_c1 -d core_c1_homolog -c \
+    "SELECT COUNT(*) FROM pg_namespace WHERE nspname IN ('raw','staging','core')")"
+  if [ "$existing" != 0 ]; then
+    echo "Volume já contém esquemas do laboratório; schema cancelado" >&2
+    exit 2
+  fi
+}
+
 apply_file() {
   assert_local
   psql -X -v ON_ERROR_STOP=1 -h /var/run/postgresql \
@@ -24,6 +34,8 @@ apply_file() {
 
 case "${1:-}" in
   schema)
+    assert_local
+    assert_fresh_schema
     # Ordem lexicográfica inclui 003b e 005b no ponto correto.
     for file in /workspace/sql/postgres/[0-9][0-9][0-9]*.sql; do
       apply_file "$file"
@@ -46,6 +58,8 @@ case "${1:-}" in
     apply_file /workspace/sql/core/proposed/002_core_helpers.sql
     ;;
   test)
+    assert_local
+    tr -d '\r' < /workspace/c1/capture_candidates.sh | sh
     apply_file /workspace/c1/tests.psql
     ;;
   *)

@@ -1,4 +1,4 @@
-name: banco-central-core-c1
+name: banco-central-core-c15
 
 services:
   db:
