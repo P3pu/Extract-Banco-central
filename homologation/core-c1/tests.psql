@@ -1,0 +1,184 @@
+\set ON_ERROR_STOP on
+-- APENAS no banco core_c1_homolog, via socket Unix do container isolado.
+SELECT set_config('core.id_min', '1', false),
+       set_config('core.id_max', '10000', false);
+
+-- Primeira carga sintética, com os scripts CORE versionados.
+\i /workspace/sql/core/proposed/003_core_upserts.sql
+\i /workspace/sql/core/proposed/005_core_inscricao_base_upsert.sql
+
+CREATE TEMP TABLE c1_pedido_primeira AS
+SELECT origem, pedido_id_origem, conteudo_hash, atualizado_core_em
+FROM core.fato_pedido;
+CREATE TEMP TABLE c1_inscricao_primeira AS
+SELECT origem, inscricao_id_origem, conteudo_hash, atualizado_core_em
+FROM core.fato_inscricao;
+
+-- Repetição idêntica: nem duplica nem regrava hashes/timestamps.
+\i /workspace/sql/core/proposed/003_core_upserts.sql
+\i /workspace/sql/core/proposed/005_core_inscricao_base_upsert.sql
+
+DO $$
+BEGIN
+    IF (SELECT COUNT(*) FROM core.dim_evento) <> 2
+       OR (SELECT COUNT(*) FROM core.dim_combo) <> 1
+       OR (SELECT COUNT(*) FROM core.fato_pedido) <> 2
+       OR (SELECT COUNT(*) FROM core.fato_inscricao) <> 3 THEN
+        RAISE EXCEPTION 'C1: cardinalidade CORE inesperada';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM core.fato_pedido p
+        FULL JOIN c1_pedido_primeira b USING (origem, pedido_id_origem)
+        WHERE p.conteudo_hash IS DISTINCT FROM b.conteudo_hash
+           OR p.atualizado_core_em IS DISTINCT FROM b.atualizado_core_em
+           OR p.origem IS NULL OR b.origem IS NULL
+    ) OR EXISTS (
+        SELECT 1 FROM core.fato_inscricao i
+        FULL JOIN c1_inscricao_primeira b USING (origem, inscricao_id_origem)
+        WHERE i.conteudo_hash IS DISTINCT FROM b.conteudo_hash
+           OR i.atualizado_core_em IS DISTINCT FROM b.atualizado_core_em
+           OR i.origem IS NULL OR b.origem IS NULL
+    ) THEN
+        RAISE EXCEPTION 'C1: UPSERT idêntico alterou linhas';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM core.fato_inscricao
+        WHERE origem='ativo' AND inscricao_id_origem=5002
+          AND pedido_id_origem=3999 AND pedido_key IS NULL
+          AND flag_pedido_nao_encontrado
+    ) THEN
+        RAISE EXCEPTION 'C1: inscrição órfã não preservada';
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM core.fato_pedido
+        WHERE origem='ativo' AND comprador_id_origem IS NOT NULL
+    ) THEN
+        RAISE EXCEPTION 'C1: comprador Ativo inventado';
+    END IF;
+    IF (SELECT COUNT(*) FROM staging.magento_inscricao) <> 1
+       OR (SELECT COALESCE(SUM(desconto),0)
+           FROM staging.magento_bundle_componente
+           WHERE inscricao_item_id=4001) <> 15
+       OR (SELECT desconto_pedido_origem FROM core.fato_pedido
+           WHERE origem='magento' AND pedido_id_origem=3001) <> -15
+       OR (SELECT valor_bruto_inscricao FROM core.fato_inscricao
+           WHERE origem='magento' AND inscricao_id_origem=4001) <> 100 THEN
+        RAISE EXCEPTION 'C1: desconto Magento pai/filhos/cabeçalho';
+    END IF;
+    IF core.magento_status_corporativo('processing','approved') <> 'CONFIRMADO'
+       OR core.magento_pagamento_confirmado('processing','new') IS NOT NULL
+       OR core.magento_status_alerta('processing','canceled')
+            <> 'STATUS_CONTRADITORIO'
+       OR core.classificacao_ativo(' GrUpOs  ',NULL,'XX',10,TRUE,TRUE)
+            <> 'Grupos'
+       OR core.classificacao_ativo('Supergrupos',NULL,'XX',10,TRUE,TRUE)
+            <> 'Site' THEN
+        RAISE EXCEPTION 'C1: status ou classificação divergente';
+    END IF;
+    IF (SELECT COUNT(*) FROM core.fato_inscricao_indicadores_validos) <> 0 THEN
+        RAISE EXCEPTION 'C1: view de indicadores aberta';
+    END IF;
+END $$;
+
+-- Constraints: violações são capturadas em subtransações, sem persistência.
+DO $$
+BEGIN
+    BEGIN
+        INSERT INTO core.fato_pedido
+          (origem,pedido_id_origem,status_corporativo,conteudo_hash)
+        VALUES ('magento',3001,'PENDENTE','duplicado');
+        RAISE EXCEPTION 'C1: UNIQUE de pedido não aplicada';
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO core.dim_pessoa
+          (cpf_token_seguro,cpf_valido,criterio_identificacao)
+        VALUES (decode('ab','hex'),TRUE,'CPF_VALIDO');
+        RAISE EXCEPTION 'C1: tamanho do token não validado';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO core.fato_inscricao
+          (origem,inscricao_id_origem,flag_pedido_nao_encontrado,
+           flag_evento_nao_mapeado,conteudo_hash,estado_derivacao,
+           derivado_de_hash,derivado_em)
+        VALUES ('ativo',5999,FALSE,FALSE,'base','VALIDADO','base',CURRENT_DATE);
+        RAISE EXCEPTION 'C1: dependências de derivação não exigidas';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+END $$;
+
+-- BETWEEN é inclusivo: 100.000 aceitos; 100.001 rejeitados.
+DO $$
+DECLARE rejeitado BOOLEAN := FALSE;
+BEGIN
+    PERFORM set_config('core.id_min','1',false);
+    PERFORM set_config('core.id_max','100000',false);
+    IF core.batch_min() <> 1 OR core.batch_max() <> 100000 THEN
+        RAISE EXCEPTION 'C1: limite inclusivo 100000 rejeitado';
+    END IF;
+    PERFORM set_config('core.id_max','100001',false);
+    BEGIN
+        PERFORM core.batch_min();
+    EXCEPTION WHEN raise_exception THEN
+        rejeitado := TRUE;
+    END;
+    IF NOT rejeitado THEN
+        RAISE EXCEPTION 'C1: limite inclusivo 100001 aceito';
+    END IF;
+END $$;
+SELECT set_config('core.id_max','10000',false);
+
+-- Mudança básica: preservar derivado de auditoria e marcar PENDENTE.
+UPDATE core.fato_inscricao
+SET classificacao_venda='Site', valor_liquido_inscricao=42
+WHERE origem='ativo' AND inscricao_id_origem=5001;
+UPDATE raw.ativo_pedido_evento SET nr_preco=120
+WHERE id_pedido_evento=5001;
+\i /workspace/sql/core/proposed/005_core_inscricao_base_upsert.sql
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM core.fato_inscricao i
+        JOIN c1_inscricao_primeira b USING (origem,inscricao_id_origem)
+        WHERE i.origem='ativo' AND i.inscricao_id_origem=5001
+          AND i.conteudo_hash IS DISTINCT FROM b.conteudo_hash
+          AND i.estado_derivacao='PENDENTE'
+          AND i.classificacao_venda='Site'
+          AND i.valor_liquido_inscricao=42
+    ) THEN
+        RAISE EXCEPTION 'C1: mudança básica apagou ou não invalidou derivados';
+    END IF;
+END $$;
+
+-- Mudança só em dependência financeira: o hash básico NÃO é suficiente.
+-- Mesmo simulando estado VALIDADO, a view deve continuar vazia.
+UPDATE core.fato_inscricao
+SET estado_derivacao='VALIDADO', derivado_de_hash=conteudo_hash,
+    dependencias_hash_snapshot='sintetico-antigo',
+    derivado_de_dependencias_hash='sintetico-antigo',
+    versao_regras_derivacao='C1_SYNTH', derivado_em=CURRENT_DATE
+WHERE origem='magento' AND inscricao_id_origem=4001;
+UPDATE raw.magento_sales_order_item SET discount_amount=12
+WHERE item_id=4002;
+\i /workspace/sql/core/proposed/005_core_inscricao_base_upsert.sql
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM core.fato_inscricao i
+        JOIN c1_inscricao_primeira b USING (origem,inscricao_id_origem)
+        WHERE i.origem='magento' AND i.inscricao_id_origem=4001
+          AND i.conteudo_hash=b.conteudo_hash
+          AND i.estado_derivacao='VALIDADO'
+    ) THEN
+        RAISE EXCEPTION 'C1: cenário de dependência não reproduzido';
+    END IF;
+    IF (SELECT COUNT(*) FROM core.fato_inscricao_indicadores_validos) <> 0 THEN
+        RAISE EXCEPTION 'C1: indicador obsoleto publicado';
+    END IF;
+END $$;
+
+-- Compilação e inspeção das consultas candidatas e de aceite versionadas.
+\i /workspace/sql/core/proposed/004_core_inscricao_candidates.sql
+\i /workspace/sql/core/proposed/900_core_acceptance_readonly.sql
+\echo C1_LOCAL_TESTS_PASSED
