@@ -101,7 +101,7 @@ class DeployD1StaticTests(unittest.TestCase):
         self.assertIn("**/secrets/", ignore)
         self.assertIn("**/certs/", ignore)
         self.assertIn("/run/d1-secrets", entry)
-        self.assertIn("load_secrets()", entry)
+        self.assertIn("load_secrets(source)", entry)
         self.assertNotRegex(example, r"(?m)^[A-Z_]*PASSWORD=")
         self.assertNotRegex(dockerfile, r"(?i)\b(?:ARG|ENV)\s+.*password")
 

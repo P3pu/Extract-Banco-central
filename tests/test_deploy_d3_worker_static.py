@@ -41,12 +41,14 @@ class WorkerComposeTests(TestCase):
             self.assertEqual(entrypoint.probe("postgres"), 0)
             fake_main.main.assert_called_once_with(["check", "--source", "postgres"])
         fake_main.main.reset_mock()
-        with mock.patch.dict("os.environ", {"D1_ENABLE_RECONCILIATION": "approved"}), \
+        with mock.patch.dict("os.environ", {"D1_ENABLE_RECONCILIATION": "approved",
+                                             "RECONCILIATION_DAYS": "35"}), \
              mock.patch.object(entrypoint, "validate_connection"), \
              mock.patch.object(entrypoint, "load_secrets"), \
              mock.patch.dict(sys.modules, {"src.main": fake_main}):
             self.assertEqual(entrypoint.reconcile("pedido"), 0)
-            fake_main.main.assert_called_once_with(["reconcile", "--source", "ativo", "--entity", "pedido"])
+            fake_main.main.assert_called_once_with(["reconcile", "--source", "ativo",
+                                                    "--entity", "pedido", "--days", "35"])
 
     def test_same_host_lock_and_root_owned_units(self):
         incremental = (D1 / "run_incrementals.sh").read_text(encoding="utf-8")

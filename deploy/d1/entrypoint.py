@@ -1,8 +1,10 @@
 """Executor D1: sem FULL, desabilitado por padrão e sem segredos em argumentos."""
 
 import argparse
+import ipaddress
 import os
 from pathlib import Path
+import re
 import signal
 import sys
 import time
@@ -11,9 +13,9 @@ import time
 HEARTBEAT = Path("/tmp/bcd-d1-heartbeat")
 SECRET_DIR = Path("/run/d1-secrets")
 SECRET_FILES = {
-    "POSTGRES_PASSWORD": "postgres_password",
-    "MAGENTO_MYSQL_PASSWORD": "magento_mysql_password",
-    "ATIVO_MYSQL_PASSWORD": "ativo_mysql_password",
+    "postgres": ("POSTGRES_PASSWORD", "postgres_password"),
+    "magento": ("MAGENTO_MYSQL_PASSWORD", "magento_mysql_password"),
+    "ativo": ("ATIVO_MYSQL_PASSWORD", "ativo_mysql_password"),
 }
 ALLOWED = {
     "magento": frozenset({"sales_order", "sales_order_item"}),
@@ -47,8 +49,9 @@ def health() -> int:
     return 0 if 0 <= age <= 60 else 1
 
 
-def load_secrets() -> None:
-    for env_name, filename in SECRET_FILES.items():
+def load_secrets(*sources: str) -> None:
+    for source in sources:
+        env_name, filename = SECRET_FILES[source]
         path = SECRET_DIR / filename
         if path.is_symlink() or not path.is_file():
             raise ValueError("Arquivo de segredo obrigatório ausente ou inválido")
@@ -61,35 +64,42 @@ def load_secrets() -> None:
 
 
 def validate_connection(source: str) -> None:
-    required = ["POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER"]
+    if source not in SECRET_FILES:
+        raise ValueError("Origem inválida")
+    prefix = "POSTGRES_" if source == "postgres" else f"{source.upper()}_MYSQL_"
+    required = [prefix + "HOST", prefix + "PORT", prefix + "USER"]
     if source != "postgres":
-        prefix = f"{source.upper()}_MYSQL_"
-        required.extend((prefix + "HOST", prefix + "PORT", prefix + "DATABASE", prefix + "USER"))
+        required.append(prefix + "DATABASE")
     if any(os.environ.get(key, "UNSET") in {"", "UNSET"} for key in required):
         raise ValueError("Destino ou usuário não configurado")
+    hostname = os.environ[prefix + "HOST"]
+    if (len(hostname) > 253 or not all(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+                                      for label in hostname.split("."))):
+        raise ValueError("Hostname inválido")
     try:
-        postgres_port = int(os.environ["POSTGRES_PORT"])
+        ipaddress.ip_address(hostname)
     except ValueError:
-        raise ValueError("Porta PostgreSQL inválida") from None
-    if not 1 <= postgres_port <= 65535:
-        raise ValueError("Porta PostgreSQL inválida")
-    if source != "postgres":
-        try:
-            mysql_port = int(os.environ[f"{source.upper()}_MYSQL_PORT"])
-        except ValueError:
-            raise ValueError("Porta MySQL inválida") from None
-        if not 1 <= mysql_port <= 65535:
-            raise ValueError("Porta MySQL inválida")
-    if os.environ.get("POSTGRES_SSLMODE") != "verify-full":
-        raise ValueError("TLS PostgreSQL deve verificar nome e CA")
-    if os.environ.get("PGSSLROOTCERT") != str(SECRET_DIR / "postgres_ca.pem"):
-        raise ValueError("CA PostgreSQL não configurada")
-    names = ("postgres_ca.pem",) if source == "postgres" else ("postgres_ca.pem", "mysql_ca.pem")
-    for name in names:
-        if not (SECRET_DIR / name).is_file():
-            raise ValueError("CA de TLS ausente")
-    if source != "postgres" and os.environ.get("MYSQL_SSL_CA") != str(SECRET_DIR / "mysql_ca.pem"):
-        raise ValueError("CA MySQL não configurada")
+        pass
+    else:
+        raise ValueError("Hostname DNS obrigatório")
+    try:
+        port = int(os.environ[prefix + "PORT"])
+    except ValueError:
+        raise ValueError(f"Porta {'PostgreSQL' if source == 'postgres' else 'MySQL'} inválida") from None
+    if not 1 <= port <= 65535:
+        raise ValueError(f"Porta {'PostgreSQL' if source == 'postgres' else 'MySQL'} inválida")
+    if source == "postgres":
+        if os.environ.get("POSTGRES_SSLMODE") != "verify-full":
+            raise ValueError("TLS PostgreSQL deve verificar nome e CA")
+        if os.environ.get("PGSSLROOTCERT") != str(SECRET_DIR / "postgres_ca.pem"):
+            raise ValueError("CA PostgreSQL não configurada")
+        ca_file = SECRET_DIR / "postgres_ca.pem"
+    else:
+        if os.environ.get("MYSQL_SSL_CA") != str(SECRET_DIR / "mysql_ca.pem"):
+            raise ValueError("CA MySQL não configurada")
+        ca_file = SECRET_DIR / "mysql_ca.pem"
+    if ca_file.is_symlink() or not ca_file.is_file():
+        raise ValueError("CA de TLS ausente ou inválida")
 
 
 def incremental(source: str, entity: str) -> int:
@@ -97,8 +107,9 @@ def incremental(source: str, entity: str) -> int:
         raise ValueError("Incrementais D1 desabilitados")
     if entity not in ALLOWED.get(source, ()):
         raise ValueError("Entidade fora da primeira onda D1 aprovada")
+    validate_connection("postgres")
     validate_connection(source)
-    load_secrets()
+    load_secrets("postgres", source)
     from src.main import main
     return main(["incremental", "--source", source, "--entity", entity])
 
@@ -106,7 +117,7 @@ def incremental(source: str, entity: str) -> int:
 def probe(source: str) -> int:
     """Checa conexão/autenticação sem consultar dados de negócio."""
     validate_connection(source)
-    load_secrets()
+    load_secrets(source)
     from src.main import main
     return main(["check", "--source", source])
 
@@ -116,10 +127,14 @@ def reconcile(entity: str) -> int:
         raise ValueError("Reconciliação D1 desabilitada")
     if entity not in ALLOWED["ativo"]:
         raise ValueError("Entidade fora da reconciliação D1 aprovada")
+    if os.environ.get("RECONCILIATION_DAYS") != "35":
+        raise ValueError("Janela D4 deve ser 35 dias; revisão necessária para alteração")
+    validate_connection("postgres")
     validate_connection("ativo")
-    load_secrets()
+    load_secrets("postgres", "ativo")
     from src.main import main
-    return main(["reconcile", "--source", "ativo", "--entity", entity])
+    return main(["reconcile", "--source", "ativo", "--entity", entity,
+                 "--days", "35"])
 
 
 def main(argv=None) -> int:

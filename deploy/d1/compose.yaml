@@ -6,7 +6,9 @@ services:
     build:
       context: ../..
       dockerfile: deploy/d1/Dockerfile
-    image: banco-central-executor:d1-review
+    image: banco-central-executor:${D1_COMMIT_SHA:-unreleased}
+    labels:
+      org.opencontainers.image.revision: ${D1_COMMIT_SHA:-unreleased}
     cpus: "0.50"
     mem_limit: 768m
     mem_reservation: 256m
@@ -41,7 +43,7 @@ services:
       ATIVO_MYSQL_USER: ${ATIVO_MYSQL_USER:-UNSET}
       MYSQL_SSL_CA: /run/d1-secrets/mysql_ca.pem
       BATCH_SIZE: ${BATCH_SIZE:-1000}
-      RECONCILIATION_DAYS: ${RECONCILIATION_DAYS:-30}
+      RECONCILIATION_DAYS: ${RECONCILIATION_DAYS:-35}
       CONNECT_TIMEOUT: ${CONNECT_TIMEOUT:-10}
     healthcheck:
       test: [CMD, "python", "-m", "deploy.d1.entrypoint", "health"]
