@@ -1,0 +1,5 @@
+# Versões diretas observadas no ambiente local em 2026-10-21.
+# Revalidar wheels Linux/Python 3.12 e gerar hashes antes de construir em produção.
+psycopg[binary]==3.3.6
+PyMySQL==1.2.3
+python-dotenv==1.2.3

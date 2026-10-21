@@ -9,3 +9,5 @@ pytest-cache-files-*/
 certs/
 *.log
 reports/
+deploy/d1/compose.env
+deploy/d1/secrets/

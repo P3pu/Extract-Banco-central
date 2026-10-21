@@ -1,0 +1,16 @@
+[Unit]
+Description=Banco Central D1 Ativo incremental (primeira onda)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=bcdsvc
+Group=bcdsvc
+StateDirectory=bcd-d1
+UMask=0077
+WorkingDirectory=/opt/extract-banco-central
+ExecStart=/bin/sh /opt/extract-banco-central/deploy/d1/run_incrementals.sh ativo
+TimeoutStartSec=12h
+StandardOutput=journal
+StandardError=journal
