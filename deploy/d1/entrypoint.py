@@ -65,11 +65,19 @@ def incremental(source: str, entity: str) -> int:
         raise ValueError("Incrementais D1 desabilitados")
     if entity not in ALLOWED.get(source, ()):
         raise ValueError("Entidade fora da primeira onda D1 aprovada")
-    required = ("POSTGRES_HOST", "POSTGRES_USER", "MAGENTO_MYSQL_HOST",
+    required = ("POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_USER", "MAGENTO_MYSQL_HOST",
                 "MAGENTO_MYSQL_DATABASE", "MAGENTO_MYSQL_USER",
                 "ATIVO_MYSQL_HOST", "ATIVO_MYSQL_DATABASE", "ATIVO_MYSQL_USER")
     if any(os.environ.get(key, "UNSET") in {"", "UNSET"} for key in required):
         raise ValueError("Destino ou usuário não configurado")
+    try:
+        postgres_port = int(os.environ["POSTGRES_PORT"])
+    except ValueError:
+        raise ValueError("Porta PostgreSQL inválida") from None
+    if not 1 <= postgres_port <= 65535:
+        raise ValueError("Porta PostgreSQL inválida")
+    if os.environ.get("POSTGRES_SSLMODE") != "verify-full":
+        raise ValueError("TLS PostgreSQL deve verificar nome e CA")
     for name in ("postgres_ca.pem", "mysql_ca.pem"):
         if not (SECRET_DIR / name).is_file():
             raise ValueError("CA de TLS ausente")

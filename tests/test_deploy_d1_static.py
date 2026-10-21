@@ -17,6 +17,7 @@ class DeployD1StaticTests(unittest.TestCase):
     def test_gate_defaults_closed_and_no_full_route(self):
         compose = (D1 / "compose.yaml").read_text(encoding="utf-8")
         self.assertIn("D1_ENABLE_INCREMENTALS: ${D1_ENABLE_INCREMENTALS:-no}", compose)
+        self.assertIn("POSTGRES_PORT: ${POSTGRES_PORT:-UNSET}", compose)
         with redirect_stderr(io.StringIO()):
             with mock.patch.dict("os.environ", {"D1_ENABLE_INCREMENTALS": "no"}):
                 self.assertEqual(entrypoint.main([
@@ -32,6 +33,32 @@ class DeployD1StaticTests(unittest.TestCase):
         })
         self.assertNotIn('commands.add_parser("full")',
                          (D1 / "entrypoint.py").read_text(encoding="utf-8"))
+
+    def test_postgres_port_and_tls_are_explicit_before_loading_secrets(self):
+        env = {
+            "D1_ENABLE_INCREMENTALS": "approved",
+            "POSTGRES_HOST": "db.example.invalid",
+            "POSTGRES_USER": "executor",
+            "POSTGRES_SSLMODE": "verify-full",
+            "MAGENTO_MYSQL_HOST": "mysql.example.invalid",
+            "MAGENTO_MYSQL_DATABASE": "magento",
+            "MAGENTO_MYSQL_USER": "executor",
+            "ATIVO_MYSQL_HOST": "ativo.example.invalid",
+            "ATIVO_MYSQL_DATABASE": "ativo",
+            "ATIVO_MYSQL_USER": "executor",
+        }
+        for port, error in (("UNSET", "Destino"), ("abc", "Porta"),
+                            ("0", "Porta"), ("65536", "Porta")):
+            with self.subTest(port=port), mock.patch.dict(
+                "os.environ", {**env, "POSTGRES_PORT": port}, clear=True
+            ):
+                with self.assertRaisesRegex(ValueError, error):
+                    entrypoint.incremental("magento", "sales_order")
+        with mock.patch.dict("os.environ", {
+            **env, "POSTGRES_PORT": "5432", "POSTGRES_SSLMODE": "disable"
+        }, clear=True):
+            with self.assertRaisesRegex(ValueError, "TLS PostgreSQL"):
+                entrypoint.incremental("magento", "sales_order")
 
     def test_compose_is_separate_and_no_db_volume_or_ports(self):
         compose = (D1 / "compose.yaml").read_text(encoding="utf-8")
@@ -104,6 +131,15 @@ class DeployD1StaticTests(unittest.TestCase):
             self.assertIn(marker, doc)
         self.assertNotRegex(doc, r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
         self.assertNotRegex(doc, r"SHA256:[A-Za-z0-9+/]{43}")
+
+    def test_d2_report_is_redacted_and_does_not_claim_sql_access(self):
+        report = (ROOT / "docs" / "DEPLOY_D2_NARUTO_DIAGNOSTICO.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertNotRegex(report, r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+        self.assertNotRegex(report, r"SHA256:[A-Za-z0-9+/]{43}")
+        self.assertIn("Não houve SQL", report)
+        self.assertIn("não está pronta", report)
 
 
 if __name__ == "__main__":

@@ -1,20 +1,19 @@
 # Deploy D1 — preparação, sem ativação
 
 **Estado:** proposta derivada de `review/raw-index-r1-magento` (`752b40c`).
-Não houve login no Naruto, consulta ao PostgreSQL, build/execução de container
-ou carga. O IP e a fingerprint não são versionados. Da estação local, TCP/22
-respondeu e TCP/2222 não; uma única negociação SSH sem autenticação apresentou
-fingerprint ED25519 igual à referência fornecida. A chave não foi aceita
-automaticamente em `known_hosts`. Falta método de autenticação para o
-diagnóstico remoto.
+O diagnóstico D2 de 21/10/2026 foi concluído por SSH autenticado e somente
+leitura, com validação da chave do servidor. O inventário e os bloqueios estão
+em [DEPLOY_D2_NARUTO_DIAGNOSTICO.md](DEPLOY_D2_NARUTO_DIAGNOSTICO.md).
+Não houve consulta SQL, build/execução de container, carga nem alteração no
+servidor. Endereço, fingerprint e credenciais não são versionados.
 
-## Diagnóstico remoto pendente
+## Roteiro para repetir o diagnóstico remoto
 
-Após receber acesso por canal seguro, conferir novamente a fingerprint antes
-de aceitar a chave, mantendo `StrictHostKeyChecking=ask` ou `yes` (nunca
-`no`). Preferir conta de diagnóstico sem privilégio; `root` é apenas o acesso
-inicial informado. Executar `sh deploy/d1/diagnose-readonly.sh` ou os comandos
-abaixo, individualmente, sem salvar saída no repositório:
+Com acesso por canal seguro, conferir novamente a fingerprint antes de aceitar
+a chave, mantendo `StrictHostKeyChecking=ask` ou `yes` (nunca `no`). Preferir
+conta de diagnóstico sem privilégio; `root` foi apenas o acesso inicial
+disponível. Executar `sh deploy/d1/diagnose-readonly.sh` ou os comandos abaixo,
+individualmente, sem salvar saída bruta no repositório:
 
 Na estação Windows, se for necessário iniciar uma sessão manual, obter o IP
 do inventário confiável e informar a credencial apenas no prompt SSH; não
@@ -46,11 +45,11 @@ docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 systemctl is-active postgresql
 ```
 
-Verificar ainda DNS/conexão TCP do futuro executor aos três destinos, sem
-autenticar nos bancos nem consultar registros. Confirmar se PostgreSQL é
-container ou serviço, rede/porta disponível e serviços críticos concorrentes.
-Não despejar `env`, `docker inspect`, arquivos de segredo ou dados de negócio.
-Até lá, Linux, CPU, RAM, disco, containers e topologia são **NÃO VERIFICADOS**.
+O inventário básico confirmou Linux, CPU, RAM, disco, containers e PostgreSQL
+em Docker Swarm. A rede overlay do banco não aceita containers comuns; a rota
+do futuro executor pelo endpoint publicado, o DNS, o TLS e o acesso às origens
+MySQL continuam **NÃO VERIFICADOS**. Não despejar `env`, inspeção de variáveis
+de containers, arquivos de segredo ou dados de negócio.
 
 ## Arquitetura proposta, desligada por padrão
 
@@ -118,7 +117,8 @@ aprovado. É preciso validar janela, cobertura, custo e cada entidade.
 ## Segredos e infraestrutura
 
 `.env.example` tem somente parâmetros não secretos. Em produção,
-`/etc/bcd-d1/compose.env` (fora do Git) conteria endpoints/usuários e gate;
+`/etc/bcd-d1/compose.env` (fora do Git) conteria endpoints/usuários, porta
+PostgreSQL explícita e gate;
 três senhas e CAs ficariam em `/etc/bcd-d1/secrets`, sem senha em argumento
 ou no `docker inspect`. O entrypoint lê esses arquivos no processo. Restringir
 permissões ao operador e UID/GID do executor. `.dockerignore` exclui `.env`,
@@ -128,22 +128,28 @@ Dependências diretas estão fixadas a partir do ambiente local. A imagem-base
 usa Python 3.12/Bookworm por tag; antes de produção, validar wheels Linux,
 fixar digest e hashes dos pacotes em homologação. Ainda não é build plenamente
 reprodutível. `POSTGRES_SSLMODE=verify-full` e CAs são propostos; conferir
-hostname/certificado e topologia real. Não enfraquecer TLS para contornar
+hostname/certificado e topologia real. O executor D1 recusa porta PostgreSQL
+`UNSET` e modo diferente de `verify-full`; não enfraquecer TLS para contornar
 falha. A rede própria precisa de rota aprovada aos bancos; não modificar o
-Compose PostgreSQL existente.
+serviço PostgreSQL existente.
 
-Conta `bcdsvc` e privilégio Docker no host ainda não foram validados. Acesso
-ao daemon Docker comum equivale a privilégio elevado; preferir Docker
-rootless ou mecanismo aprovado. **Não** adicionar `bcdsvc` ao grupo `docker`
-automaticamente. O `StateDirectory` systemd armazena só o lock global.
+No D2, a conta `bcdsvc` e o checkout proposto não existem; `git` também não
+está instalado. O Docker do host não é rootless e seu socket pertence a
+`root:docker`; acesso ao daemon equivale a privilégio elevado. Definir antes
+uma identidade/mecanismo aprovado. **Não** adicionar `bcdsvc` ao grupo
+`docker` automaticamente. O `StateDirectory` systemd armazenaria só o lock
+global.
 
 ## Sequência futura — exige autorização separada
 
-1. Concluir diagnóstico remoto e aprovar recursos, rota, TLS e identidade de
-   serviço. Conferir watermarks/runs somente em leitura e dimensionar backlog.
+1. Revisar o diagnóstico D2 e resolver recursos, rota, TLS e identidade de
+   serviço pendentes. Conferir watermarks/runs somente após autorização de
+   leitura separada e dimensionar backlog.
 2. Homologar build Linux; fixar digest/hashes; provisionar fora do Git
    `compose.env`, segredos e CAs com permissões restritas.
-3. Preparar checkout do commit aprovado em `/opt/extract-banco-central`.
+3. Aprovar entrega do commit como artefato imutável ou instalação controlada
+   de Git, que não existe no host, e preparar checkout em
+   `/opt/extract-banco-central`.
    Comandos **propostos, não executar agora**:
 
 ```bash
