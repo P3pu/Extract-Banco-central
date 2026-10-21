@@ -40,10 +40,13 @@ class DeployD1StaticTests(unittest.TestCase):
             "POSTGRES_HOST": "db.example.invalid",
             "POSTGRES_USER": "executor",
             "POSTGRES_SSLMODE": "verify-full",
+            "PGSSLROOTCERT": "/run/d1-secrets/postgres_ca.pem",
             "MAGENTO_MYSQL_HOST": "mysql.example.invalid",
+            "MAGENTO_MYSQL_PORT": "3306",
             "MAGENTO_MYSQL_DATABASE": "magento",
             "MAGENTO_MYSQL_USER": "executor",
             "ATIVO_MYSQL_HOST": "ativo.example.invalid",
+            "ATIVO_MYSQL_PORT": "3306",
             "ATIVO_MYSQL_DATABASE": "ativo",
             "ATIVO_MYSQL_USER": "executor",
         }
@@ -115,7 +118,9 @@ class DeployD1StaticTests(unittest.TestCase):
                 encoding="utf-8"
             )
             self.assertIn("Type=oneshot", service)
-            self.assertIn("User=bcdsvc", service)
+            self.assertIn("User=root", service)
+            self.assertIn("NoNewPrivileges=true", service)
+            self.assertIn("ProtectSystem=strict", service)
             self.assertIn("StateDirectory=bcd-d1", service)
             self.assertIn(f"run_incrementals.sh {name}", service)
             self.assertIn("Persistent=false", timer)

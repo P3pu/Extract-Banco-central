@@ -1,0 +1,10 @@
+[Unit]
+Description=Agenda proposta D1 reconciliação Ativo (não instalar/ativar sem aprovação)
+
+[Timer]
+OnCalendar=*-*-01 03:00:00
+Persistent=false
+Unit=bcd-d1-reconciliation.service
+
+[Install]
+WantedBy=timers.target

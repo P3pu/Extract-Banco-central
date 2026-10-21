@@ -25,7 +25,7 @@ compose_file="$repo_root/deploy/d1/compose.yaml"
 config_file=/etc/bcd-d1/compose.env
 lock_dir=/var/lib/bcd-d1
 
-if [ ! -f "$config_file" ] || [ ! -d "$lock_dir" ] || [ -L "$lock_dir" ]; then
+if [ ! -f "$config_file" ] || [ -L "$config_file" ] || [ ! -d "$lock_dir" ] || [ -L "$lock_dir" ]; then
   echo 'Configuração ou diretório de lock D1 ausente/inválido' >&2
   exit 2
 fi

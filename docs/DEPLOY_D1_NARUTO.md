@@ -135,10 +135,11 @@ serviço PostgreSQL existente.
 
 No D2, a conta `bcdsvc` e o checkout proposto não existem; `git` também não
 está instalado. O Docker do host não é rootless e seu socket pertence a
-`root:docker`; acesso ao daemon equivale a privilégio elevado. Definir antes
-uma identidade/mecanismo aprovado. **Não** adicionar `bcdsvc` ao grupo
-`docker` automaticamente. O `StateDirectory` systemd armazenaria só o lock
-global.
+`root:docker`; acesso ao daemon equivale a privilégio elevado. A revisão D3
+documenta em [DEPLOY_D3_WORKER_COMPOSE.md](DEPLOY_D3_WORKER_COMPOSE.md) o
+modelo proposto de unidades root-owned com comando fixo, sem conceder o grupo
+`docker` a operadores ou serviço. Esse risco residual ainda requer aprovação
+de segurança. O `StateDirectory` systemd armazenaria só o lock global.
 
 ## Sequência futura — exige autorização separada
 
