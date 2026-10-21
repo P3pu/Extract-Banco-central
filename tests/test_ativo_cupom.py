@@ -102,7 +102,7 @@ def test_seed_sets_source_upper_watermark_only_after_success(failure, old):
     with patch.object(ativo_cupom.postgres, "connect", pg), \
          patch.object(ativo_cupom.mysql, "connect", source), \
          patch.object(cupom, "validate_schema"), \
-         patch.object(ativo_cupom.loader, "prepare"), \
+         patch.object(ativo_cupom.loader, "validate_target"), patch.object(ativo_cupom.loader, "prepare"), \
          patch.object(ativo_cupom, "load_references", side_effect=perform):
         if failure:
             with pytest.raises(ValueError):

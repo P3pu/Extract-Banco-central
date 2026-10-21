@@ -32,7 +32,10 @@ def load(connection, reader, mode, batch_size, batch_id, old_id, days, progress,
     if mode == "RECONCILIATION":
         _, upper_event_id = reader.ativo_pedido_evento_bounds(count_total=False)
         cutoff = reader.ativo_pedido_cutoff(days)
-    connection.execute((ROOT / "sql/postgres" / ddl).read_text(encoding="utf-8"))
+    if mode == "FULL":
+        connection.execute((ROOT / "sql/postgres" / ddl).read_text(encoding="utf-8"))
+    else:
+        loader.validate_target(connection, target, contract)
     loader.prepare(connection, target)
     cursor = None
     newest = old_id

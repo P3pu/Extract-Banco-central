@@ -55,7 +55,8 @@ def test_event_reconciliation_does_not_advance_pk_watermark():
     row = [None] * len(pedido_evento.COLUMNS)
     row[0], row[1] = 400, 10
     reader.ativo_pedido_evento_page.side_effect = [(tuple(row),), ()]
-    with patch.object(pipeline.loader, "prepare"), patch.object(pipeline.loader, "upsert", return_value=1) as upsert:
+    with patch.object(pipeline.loader, "validate_target"), patch.object(pipeline.loader, "prepare"), \
+         patch.object(pipeline.loader, "upsert", return_value=1) as upsert:
         result = pipeline.load(conn, reader, "RECONCILIATION", 10, uuid4(), 350, 30,
                                {"rows_extracted": 0, "rows_loaded": 0}, entity="pedido_evento")
     assert result == 350

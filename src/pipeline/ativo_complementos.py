@@ -32,7 +32,10 @@ def load(connection, reader, mode, batch_size, batch_id, old_id, days, progress,
     source_count, upper_id = reader.snapshot_bounds(
         contract, count_total=mode in {"FULL", "SNAPSHOT"})
     cutoff = reader.ativo_pedido_cutoff(days) if mode == "RECONCILIATION" else None
-    connection.execute((ROOT / "sql/postgres" / ddl).read_text(encoding="utf-8"))
+    if mode in {"FULL", "SNAPSHOT"}:
+        connection.execute((ROOT / "sql/postgres" / ddl).read_text(encoding="utf-8"))
+    else:
+        loader.validate_target(connection, target, contract)
     loader.prepare(connection, target)
     cursor = None
     newest = None if mode in {"FULL", "SNAPSHOT"} else old_id

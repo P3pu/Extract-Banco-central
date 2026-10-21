@@ -81,7 +81,7 @@ def test_user_reconciliation_deduplicates_refs_without_advancing_watermark():
     reader.recent_user_refs_page.side_effect = [((100, 5), (101, 5), (102, 6)), ()]
     reader.usuario_ids.return_value = [(5, *([None] * 20)), (6, *([None] * 20))]
     progress = {"rows_extracted": 0, "rows_loaded": 0}
-    with patch.object(ativo_usuario.loader, "prepare"), \
+    with patch.object(ativo_usuario.loader, "validate_target"), patch.object(ativo_usuario.loader, "prepare"), \
          patch.object(ativo_usuario.loader, "upsert", return_value=2) as upsert:
         newest = ativo_usuario.load(conn, reader, "RECONCILIATION", 100,
                                     uuid4(), 499, 30, progress, "usuario")

@@ -2,6 +2,8 @@
 
 Estado: **somente revisão local**. Nenhum comando deste roteiro foi executado no Naruto nesta fase. A branch D4 parte do commit D3 `3d45918`; substituir `<COMMIT_D4>` pelo SHA completo publicado após revisão. Não criar CORE/MART, índices, serviços Swarm, containers ou cargas durante a preparação.
 
+**Atualização D4.1:** a separação de migrações, o digest da imagem-base e os hashes das wheels estão descritos em [DEPLOY_D4_1_SCHEMA_SAFETY.md](DEPLOY_D4_1_SCHEMA_SAFETY.md). As observações abaixo sobre pinagem pendente refletem o estado histórico da D4, não a revisão D4.1.
+
 ## Correções D4 e limite da reconciliação
 
 `probe --source postgres|magento|ativo` valida e lê apenas a configuração, a CA e a senha da fonte escolhida. A biblioteca de cada fonte efetua DNS/TCP, autenticação e verificação TLS durante `src.main check`, que não consulta dados de negócio. A sonda MySQL não abre conexão PostgreSQL. `incremental` e `reconcile` continuam exigindo PostgreSQL **e** a origem correspondente; `FULL` não existe no executor. Os dois gates permanecem `no` por padrão.

@@ -51,7 +51,7 @@ def test_product_snapshot_deletes_stale_only_after_complete_extract():
     conn.execute.side_effect = [MagicMock(), MagicMock(rowcount=1),
                                 MagicMock(fetchone=MagicMock(return_value=(2,)))]
     progress = {"rows_extracted": 0, "rows_loaded": 0}
-    with patch.object(ativo_complementos.loader, "prepare"), \
+    with patch.object(ativo_complementos.loader, "validate_target"), patch.object(ativo_complementos.loader, "prepare"), \
          patch.object(ativo_complementos.loader, "upsert", return_value=1):
         newest = ativo_complementos.load(conn, reader, "SNAPSHOT", 1,
                                         uuid4(), 5, 30, progress, "pedido_produto")
@@ -79,7 +79,7 @@ def test_address_reconciliation_does_not_advance_watermark():
     reader.ativo_pedido_cutoff.return_value = "2026-09-01"
     reader.pedido_endereco_reconcile_page.side_effect = [[(25, *([None] * 9))], []]
     progress = {"rows_extracted": 0, "rows_loaded": 0}
-    with patch.object(ativo_complementos.loader, "prepare"), \
+    with patch.object(ativo_complementos.loader, "validate_target"), patch.object(ativo_complementos.loader, "prepare"), \
          patch.object(ativo_complementos.loader, "upsert", return_value=1):
         newest = ativo_complementos.load(conn, reader, "RECONCILIATION", 10,
                                         uuid4(), 90, 30, progress, "pedido_endereco")

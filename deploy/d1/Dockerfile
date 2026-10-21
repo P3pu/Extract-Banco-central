@@ -1,4 +1,4 @@
-FROM python:3.12-slim-bookworm
+FROM python:3.12-slim-bookworm@sha256:57d96f71de145a98e7ceca18ee4ade77bba4103a33a72dfaea026b23625c6bf0
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 COPY deploy/d1/requirements.lock /app/requirements.lock
-RUN python -m pip install --no-cache-dir -r /app/requirements.lock
+RUN python -m pip install --no-cache-dir --require-hashes --only-binary=:all: -r /app/requirements.lock
 
 COPY src /app/src
 COPY sql/postgres /app/sql/postgres

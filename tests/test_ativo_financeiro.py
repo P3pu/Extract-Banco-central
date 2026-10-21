@@ -66,7 +66,7 @@ def test_payment_reconciliation_runs_both_indexed_windows_without_advancing_wate
         [(123, 1, 2, "CONFIRMADO", "2026-09-02", "2026-09-03")], [],
         [(123, 1, 2, "CONFIRMADO", "2026-09-02", "2026-09-03")], []]
     progress = {"rows_extracted": 0, "rows_loaded": 0}
-    with patch.object(ativo_financeiro.loader, "prepare"), \
+    with patch.object(ativo_financeiro.loader, "validate_target"), patch.object(ativo_financeiro.loader, "prepare"), \
          patch.object(ativo_financeiro.loader, "upsert", return_value=1) as upsert:
         newest = ativo_financeiro.load(conn, reader, "RECONCILIATION", 100,
                                       uuid4(), 99, 30, progress, "pedido_pagamento")

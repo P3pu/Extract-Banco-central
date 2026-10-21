@@ -54,7 +54,8 @@ def test_incremental_watermark_is_maximum_not_last_pk_timestamp():
     reader.sales_order_item_bounds.return_value = (None, 2, None)
     reader.sales_order_item_page.side_effect = [rows[:1], rows[1:], ()]
     progress = {"rows_extracted": 0, "rows_loaded": 0}
-    with patch.object(pipeline.loader, "prepare"), patch.object(pipeline.loader, "upsert", return_value=1) as upsert:
+    with patch.object(pipeline.loader, "validate_target"), patch.object(pipeline.loader, "prepare"), \
+         patch.object(pipeline.loader, "upsert", return_value=1) as upsert:
         result = pipeline.load(conn, reader, "INCREMENTAL", 1, uuid4(), old, progress, "sales_order_item")
     assert result == recent
     assert reader.sales_order_item_page.call_args_list[1].kwargs["cursor"] == 0

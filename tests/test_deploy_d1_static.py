@@ -109,7 +109,7 @@ class DeployD1StaticTests(unittest.TestCase):
         lock = (D1 / "requirements.lock").read_text(encoding="utf-8")
         for line in lock.splitlines():
             if line and not line.startswith("#"):
-                self.assertRegex(line, r"^[A-Za-z0-9_\-\[\]]+==\d+\.\d+\.\d+$")
+                self.assertRegex(line, r"^[A-Za-z0-9_\-\[\]]+==\d+\.\d+\.\d+ --hash=sha256:[0-9a-f]{64}$")
         for name in ("magento", "ativo"):
             service = (D1 / "systemd" / f"bcd-d1-{name}.service").read_text(
                 encoding="utf-8"

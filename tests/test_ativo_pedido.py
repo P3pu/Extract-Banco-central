@@ -55,14 +55,16 @@ def test_incremental_starts_after_watermark_and_reconcile_does_not_advance_it():
     row = [None] * len(pedido.COLUMNS)
     row[0], row[pedido.COLUMNS.index("dt_pedido")] = 90, datetime(2026, 9, 1)
     reader.ativo_pedido_page.side_effect = [(tuple(row),), ()]
-    with patch.object(pipeline.loader, "prepare"), patch.object(pipeline.loader, "upsert", return_value=1):
+    with patch.object(pipeline.loader, "validate_target"), patch.object(pipeline.loader, "prepare"), \
+         patch.object(pipeline.loader, "upsert", return_value=1):
         progress = {"rows_extracted": 0, "rows_loaded": 0}
         assert pipeline.load(conn, reader, "RECONCILIATION", 5, uuid4(), 95, 30, progress) == 95
     assert reader.ativo_pedido_page.call_args_list[0].kwargs["cursor"] is None
     assert reader.ativo_pedido_page.call_args_list[1].kwargs["cursor"] == (datetime(2026, 9, 1), 90)
     reader.ativo_pedido_page.reset_mock(side_effect=True)
     reader.ativo_pedido_page.side_effect = [(tuple(row),), ()]
-    with patch.object(pipeline.loader, "prepare"), patch.object(pipeline.loader, "upsert", return_value=1):
+    with patch.object(pipeline.loader, "validate_target"), patch.object(pipeline.loader, "prepare"), \
+         patch.object(pipeline.loader, "upsert", return_value=1):
         pipeline.load(conn, reader, "INCREMENTAL", 5, uuid4(), 95, 30,
                       {"rows_extracted": 0, "rows_loaded": 0})
     assert reader.ativo_pedido_page.call_args_list[0].kwargs["cursor"] == 95
