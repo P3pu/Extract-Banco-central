@@ -18,8 +18,10 @@ INSERT INTO raw.ativo_modalidade_categoria
 VALUES (1103,'Cortesia sintética',0,'synthetic','2025-01-01T00:00:00Z',
         '00000000-0000-0000-0000-000000000001');
 INSERT INTO raw.ativo_cupom_desconto_item
-  (id_cupom_desconto_item,nr_cupom,_source,_extracted_at,_batch_id)
-VALUES (8102,'GR-SYNTHETIC','synthetic','2025-01-01T00:00:00Z',
+  (id_cupom_desconto_item,nr_cupom,fl_usado,dt_sistema,id_cupom_desconto,
+   _source,_extracted_at,_batch_id)
+VALUES (8102,'GR-SYNTHETIC','S','2025-01-01 12:00:00',8201,
+        'synthetic','2025-01-01T00:00:00Z',
         '00000000-0000-0000-0000-000000000001');
 INSERT INTO raw.ativo_pedido_evento
   (id_pedido_evento,id_pedido,id_evento,id_categoria,id_usuario,

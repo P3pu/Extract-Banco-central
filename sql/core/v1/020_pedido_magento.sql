@@ -15,7 +15,7 @@ INSERT INTO core.fato_pedido
      pagamento_considerado,motivo_status_analitico,
      valor_bruto_pedido,desconto_pedido_origem,valor_liquido_pedido,
      frete_pedido,imposto_pedido,valor_total_cobrado,
-     batch_id_origem,conteudo_hash)
+     flag_excecao_financeira,batch_id_origem,conteudo_hash)
 SELECT 'magento',pedido_id,protocolo,cliente_id::bigint,
        criado_em,criado_em::text,atualizado_em,status_pedido,estado_pedido,
        situacao,situacao='CANCELADO',
@@ -28,7 +28,7 @@ SELECT 'magento',pedido_id,protocolo,cliente_id::bigint,
        subtotal,desconto,
        CASE WHEN subtotal IS NOT NULL AND desconto IS NOT NULL
             THEN subtotal+desconto END,
-       frete,imposto,valor_total,batch_id,hash_novo
+       frete,imposto,valor_total,true,batch_id,hash_novo
 FROM fonte
 ON CONFLICT (origem,pedido_id_origem) DO UPDATE SET
     protocolo=EXCLUDED.protocolo,
@@ -50,6 +50,12 @@ ON CONFLICT (origem,pedido_id_origem) DO UPDATE SET
     frete_pedido=EXCLUDED.frete_pedido,
     imposto_pedido=EXCLUDED.imposto_pedido,
     valor_total_cobrado=EXCLUDED.valor_total_cobrado,
+    desconto_itens_identificado=NULL,
+    desconto_nao_atribuido=NULL,
+    flag_excecao_financeira=true,
+    flag_evento_teste=NULL,
+    flag_pedido_misto_teste=NULL,
+    flag_pedido_misto_temporal=NULL,
     batch_id_origem=EXCLUDED.batch_id_origem,
     conteudo_hash=EXCLUDED.conteudo_hash,
     atualizado_core_em=clock_timestamp()

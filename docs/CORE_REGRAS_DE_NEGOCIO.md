@@ -43,8 +43,9 @@ as views STAGING PostgreSQL. A view de indicadores permanece `WHERE FALSE`.
   kit = `vl_kit` da categoria; líquido = `GREATEST(0,preco-desconto-kit)`
   somente com todos componentes válidos. Taxa = `nr_taxa` individual,
   segregada do kit e da receita. `preco+taxa` é derivado, não total recebido.
-  Pedido Ativo só consolida quando todas as inscrições estão carregadas e os
-  componentes são calculáveis; na perda de cobertura, totais voltam a NULL.
+  Pedido Ativo só consolida quando todas as inscrições estão carregadas, os
+  status são interpretáveis e os componentes calculáveis; na perda de
+  cobertura, totais voltam a NULL.
 
 ## Classificação, eventos e combos
 

@@ -17,6 +17,11 @@ WITH desejados AS (
     WHERE inscricao_id_origem BETWEEN %(id_min)s AND %(id_max)s
       AND status_pendente_validacao IS TRUE
     UNION ALL
+    SELECT origem,'inscricao',inscricao_id_origem,'DATA_INVALIDA','WARNING'
+    FROM core.fato_inscricao
+    WHERE inscricao_id_origem BETWEEN %(id_min)s AND %(id_max)s
+      AND data_evento_original IS NOT NULL AND data_evento IS NULL
+    UNION ALL
     SELECT origem,'inscricao',inscricao_id_origem,'DESCONTO_INVALIDO','WARNING'
     FROM core.fato_inscricao
     WHERE origem='ativo'
@@ -69,7 +74,8 @@ WITH desejados AS (
         resolvido_em=clock_timestamp()
     WHERE a.entidade='inscricao' AND a.ativo
       AND a.codigo_regra IN ('ORFAO_PEDIDO','EVENTO_SEM_MAPA',
-           'STATUS_ESPECIAL','DESCONTO_INVALIDO','DESCONTO_CABECALHO',
+           'STATUS_ESPECIAL','DATA_INVALIDA','DESCONTO_INVALIDO',
+           'DESCONTO_CABECALHO',
            'QTD_BUNDLE','REEMBOLSO','CANCELAMENTO_PARCIAL',
            'CUPOM_HEADER_AUSENTE','COMBO_COMPOSICAO')
       AND a.identificador_origem BETWEEN %(id_min)s AND %(id_max)s

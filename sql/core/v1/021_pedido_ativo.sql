@@ -12,7 +12,7 @@ INSERT INTO core.fato_pedido
      local_inscricao_codigo,status_corporativo,flag_cancelado,
      pedido_elegivel,pagamento_confirmado,pagamento_considerado,
      motivo_status_analitico,desconto_pedido_origem,batch_id_origem,
-     conteudo_hash)
+     conteudo_hash,flag_excecao_financeira)
 SELECT 'ativo',pedido_id,pedido_id::text,NULL::bigint,
        core.try_timestamp(data_pedido),data_pedido,
        core.try_timestamp(data_alteracao),data_alteracao,
@@ -32,7 +32,7 @@ SELECT 'ativo',pedido_id,pedido_id::text,NULL::bigint,
             WHEN status_id=2 THEN 'STATUS_PAGO'
             WHEN status_id=5 THEN 'CANCELADO'
             ELSE 'STATUS_PENDENTE_VALIDACAO' END,
-       desconto,batch_id,hash_novo
+       desconto,batch_id,hash_novo,true
 FROM fonte
 ON CONFLICT (origem,pedido_id_origem) DO UPDATE SET
     protocolo=EXCLUDED.protocolo,
@@ -50,6 +50,12 @@ ON CONFLICT (origem,pedido_id_origem) DO UPDATE SET
     pagamento_considerado=EXCLUDED.pagamento_considerado,
     motivo_status_analitico=EXCLUDED.motivo_status_analitico,
     desconto_pedido_origem=EXCLUDED.desconto_pedido_origem,
+    valor_bruto_pedido=NULL,
+    valor_liquido_pedido=NULL,
+    taxa_servico_total_ativo=NULL,
+    flag_excecao_financeira=true,
+    flag_evento_teste=NULL,
+    flag_pedido_misto_teste=NULL,
     batch_id_origem=EXCLUDED.batch_id_origem,
     conteudo_hash=EXCLUDED.conteudo_hash,
     atualizado_core_em=clock_timestamp()

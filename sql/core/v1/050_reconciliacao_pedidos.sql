@@ -43,12 +43,14 @@ WITH pedidos AS (
               qtd_liquido,
            COUNT(*) FILTER (WHERE f.taxa_servico_ativo IS NOT NULL)
               qtd_taxa,
+           COUNT(*) FILTER (WHERE f.contabiliza_inscricao IS NOT NULL)
+              qtd_status,
            SUM(f.valor_bruto_inscricao) FILTER
-              (WHERE f.flag_cancelado_inscricao IS DISTINCT FROM true) bruto,
+              (WHERE f.contabiliza_inscricao IS TRUE) bruto,
            SUM(f.valor_liquido_inscricao) FILTER
-              (WHERE f.flag_cancelado_inscricao IS DISTINCT FROM true) liquido,
+              (WHERE f.contabiliza_inscricao IS TRUE) liquido,
            SUM(f.taxa_servico_ativo) FILTER
-              (WHERE f.flag_cancelado_inscricao IS DISTINCT FROM true) taxa
+              (WHERE f.contabiliza_inscricao IS TRUE) taxa
     FROM core.fato_inscricao f
     WHERE f.origem='ativo'
       AND f.pedido_id_origem IN (SELECT pedido_id_origem FROM pedidos
@@ -80,17 +82,21 @@ UPDATE core.fato_pedido f SET
         OR (e.tem_teste AND e.tem_real)
       ELSE a.qtd_core IS DISTINCT FROM ac.qtd_staging
         OR a.qtd_bruto IS DISTINCT FROM a.qtd_core
-        OR a.qtd_liquido IS DISTINCT FROM a.qtd_core END,
+        OR a.qtd_liquido IS DISTINCT FROM a.qtd_core
+        OR a.qtd_status IS DISTINCT FROM a.qtd_core END,
     -- Ativo só consolida quando TODAS as inscrições do pedido estão na CORE.
     -- Totais comerciais excluem canceladas, mas taxa segue segregada.
     valor_bruto_pedido=CASE WHEN f.origem='ativo'
         AND a.qtd_core=ac.qtd_staging AND a.qtd_bruto=a.qtd_core
+        AND a.qtd_status=a.qtd_core
         THEN a.bruto ELSE NULL END,
     valor_liquido_pedido=CASE WHEN f.origem='ativo'
         AND a.qtd_core=ac.qtd_staging AND a.qtd_liquido=a.qtd_core
+        AND a.qtd_status=a.qtd_core
         THEN a.liquido ELSE NULL END,
     taxa_servico_total_ativo=CASE WHEN f.origem='ativo'
         AND a.qtd_core=ac.qtd_staging AND a.qtd_taxa=a.qtd_core
+        AND a.qtd_status=a.qtd_core
         THEN a.taxa ELSE NULL END,
     atualizado_core_em=clock_timestamp()
 FROM pedidos p
