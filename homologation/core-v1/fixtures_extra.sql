@@ -12,7 +12,11 @@ VALUES (3001,2,'SYN-A-3001','2025-01-01 12:00:00',1,0,
         '00000000-0000-0000-0000-000000000001'),
        (3003,1,'SYN-A-3003','2025-01-01 12:00:00',2,0,
         'synthetic','2025-01-01T00:00:00Z',
+        '00000000-0000-0000-0000-000000000001'),
+       (3004,2,'SYN-A-3004','2025-01-01 12:00:00',1,0,
+        'synthetic','2025-01-01T00:00:00Z',
         '00000000-0000-0000-0000-000000000001');
+UPDATE raw.ativo_pedido SET id_combo=2001 WHERE id_pedido=3004;
 INSERT INTO raw.ativo_modalidade_categoria
   (id_categoria,ds_categoria,vl_kit,_source,_extracted_at,_batch_id)
 VALUES (1103,'Cortesia sintética',0,'synthetic','2025-01-01T00:00:00Z',
@@ -45,6 +49,14 @@ VALUES (5005,3001,1001,1101,7005,0,NULL,100,7.25,'0','N',
        (5010,3002,1001,1103,7010,0,NULL,0,0,'0','N',
         '2025-01-01 12:00:00','synthetic','2025-01-01T00:00:00Z',
         '00000000-0000-0000-0000-000000000001');
+INSERT INTO raw.ativo_pedido_evento
+  (id_pedido_evento,id_pedido,id_evento,id_categoria,id_usuario,
+   id_status_detalhado,id_cupom_individual,nr_preco,nr_taxa,
+   nr_desconto_individual,fl_amigo,dt_cadastro,_source,_extracted_at,_batch_id)
+SELECT g,3004,1001,1101,7000+g,0,NULL,100,2,'0','N',
+       '2025-01-01 12:00:00','synthetic','2025-01-01T00:00:00Z',
+       '00000000-0000-0000-0000-000000000001'
+FROM generate_series(5011,5015) AS s(g);
 UPDATE raw.ativo_evento SET id_campanha_salesforce='SYN-EVENT'
 WHERE id_evento=1001;
 INSERT INTO raw.magento_product

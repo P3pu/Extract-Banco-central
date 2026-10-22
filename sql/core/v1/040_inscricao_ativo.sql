@@ -21,11 +21,11 @@ WITH dados AS (
            (i.status_pedido_id=2 OR
              (i.status_pedido_id=1 AND i.local_inscricao_codigo=2))
              pedido_elegivel,
-           (i.categoria ILIKE '%grupo%'
-             OR i.categoria ILIKE '%saúde corporativa%'
-             OR i.categoria ILIKE '%saude corporativa%') categoria_grupos,
-           (i.categoria ILIKE '%cortesia%'
-             OR i.categoria ILIKE '%patrocinador%') categoria_cortesia,
+           (i.categoria ILIKE '%%grupo%%'
+             OR i.categoria ILIKE '%%saúde corporativa%%'
+             OR i.categoria ILIKE '%%saude corporativa%%') categoria_grupos,
+           (i.categoria ILIKE '%%cortesia%%'
+             OR i.categoria ILIKE '%%patrocinador%%') categoria_cortesia,
            (BTRIM(cupom.codigo_cupom) ~* '^GR') cupom_gr,
            md5(ROW(f.conteudo_hash,i.status_detalhado_id,i.status_pedido_id,
                    i.local_inscricao_codigo,i.preco,i.desconto_individual,
@@ -94,11 +94,17 @@ UPDATE core.fato_inscricao f SET
     pagamento_confirmado=CASE WHEN d.cancelada THEN false
                                WHEN d.elegivel IS TRUE
                                 AND d.status_pedido_id=2 THEN true
+                               WHEN d.elegivel IS TRUE
+                                AND d.status_pedido_id=1
+                                AND d.local_inscricao_codigo=2 THEN false
                                WHEN d.elegivel IS FALSE THEN false END,
     pagamento_presumido=false,
     pago_considerado=CASE WHEN d.cancelada THEN false
                           WHEN d.elegivel IS TRUE
                            AND d.status_pedido_id=2 THEN true
+                          WHEN d.elegivel IS TRUE
+                           AND d.status_pedido_id=1
+                           AND d.local_inscricao_codigo=2 THEN false
                           WHEN d.elegivel IS FALSE THEN false END,
     motivo_elegibilidade=CASE WHEN d.cancelada THEN 'CANCELAMENTO_PREVALECE'
                               WHEN d.status_pendente THEN 'STATUS_ESPECIAL'

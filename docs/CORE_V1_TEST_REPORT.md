@@ -1,6 +1,6 @@
 # Relatório de execução — CORE V1
 
-Data de preparação: 2026-10-22. Branch `codex/core-v1-implementation`.
+Data de homologação local: 2026-10-22. Branch `codex/core-v1-implementation`.
 
 ## Implementado e testado localmente
 
@@ -11,31 +11,43 @@ Data de preparação: 2026-10-22. Branch `codex/core-v1-implementation`.
 - Regressão CORE anterior: `41 passed, 18 subtests passed` ao executar as
   suítes estáticas V1, Fase B, C1 e C2 conjuntamente.
 - `docker compose -f homologation/core-v1/compose.yaml config --quiet`
-  passou (sintaxe, antes de subir qualquer serviço).
+  passou. PostgreSQL Docker 16.13 iniciou em volume próprio e `schema.sh`
+  criou RAW/STAGING com fixtures sintéticas; as 31 views versionadas
+  compilaram. Migrations 001/002/006 aplicadas no laboratório.
+- Execução limpa no terceiro volume: eventos `6`, combos `1`, pedidos `12`,
+  inscrições/reconciliação/alertas `87` linhas afetadas. Esses contadores são
+  operações SQL, não quantidade de inscrições distintas.
+- `20 passed` na suíte `tests/integration/test_core_v1_lab.py`: cabeçalhos,
+  filhos, desconto só no cabeçalho, cancelamento/reembolso/quantidade, taxa e
+  kit Ativo, Balcão, status especial, precedência de classificação, eventos
+  separados, pedido temporal misto, combo incompleto/completo, idempotência,
+  rederivação temporal, rollback de falha e gate fechado.
+- O teste de falha confirmou lote `FAILED` auditado sem mudança da derivação
+  da inscrição. Todos os containers do laboratório foram parados após teste;
+  nenhum volume foi apagado.
 - Nenhum comando CORE foi enviado ao `Atendimento`, Naruto ou fontes MySQL.
 
 ## Implementado com exceções identificadas
 
-- SQL de fatos/dimensões e regras por origem versionado, mas **ainda sem
-  compilação/execução PostgreSQL neste turno**. Não declarar a CORE pronta
-  para primeira carga até homologação SQL em volume V1 novo.
-- Dados sintéticos C1 + extensão V1 e asserções de descontos de filhos,
-  desconto só de cabeçalho, cancelamento/reembolso/quantidade, Balcão,
-  classificação, evento ambíguo e pedido temporal misto estão preparados.
-  Asserções de integração permanecem não executadas.
-- Docker Desktop/Engine local não disponibilizou o pipe
-  `dockerDesktopLinuxEngine`; iniciar a aplicação não o tornou acessível.
-- Suíte de integração V1: `14 skipped` sem `CORE_V1_LAB_TEST=1`/banco isolado;
-  nenhum teste SQL foi indevidamente contado como aprovado.
+- A primeira execução sintética de inscrições falhou porque o driver Psycopg
+  interpretou `%` literal no `ILIKE`; corrigido para `%%` e retestado.
+- A primeira suíte de integração identificou apagamento de subtotal Magento
+  na reconciliação e `NULL` indevido em pagamento Balcão; ambos corrigidos e
+  retestados em volume fresco. Um teste de trigger ficou aguardando lock da
+  própria fixture; o teste foi interrompido, ajustado e reexecutado.
+- Os três volumes sintéticos criados para diagnóstico e rerun foram preservados
+  (sem `down -v`). O resultado aceito é o do terceiro volume fresco.
 
 ## Pendente por dado/regra aprovada ou validação
 
-- Cobrir todos os 20 cenários mínimos com execução real da suíte de integração,
-  incluindo idempotência, falha no meio, combos completos/incompletos e
-  transição temporal. Atualmente só uma parte tem asserções automatizadas.
-- Validar tipos, SQL e cardinalidade de todas as views contra PostgreSQL 16
-  isolado. Ajustes encontrados no laboratório exigirão revisão antes de
-  qualquer uso em produção.
+- Reconciliação histórica real e cardinalidades do `Atendimento` não foram
+  verificadas nesta tarefa. A cobertura sintética não aprova valores reais.
+- `pedido_id NULL` não pôde ser inserido nas RAW sintéticas existentes porque
+  os contratos RAW versionados declaram `id_pedido`/`order_id` NOT NULL. A
+  tabela CORE e o UPSERT aceitam NULL, mas esse caminho não tem fixture da
+  fonte sem alteração de contrato.
+- Reprocessamento completo de dependências auxiliares antigas ainda precisa
+  de mecanismo operacional/CDC antes de abrir qualquer indicador.
 - Fonte de classificação de cupom Ativo, descrição de status detalhado,
   comprador Ativo, composição de combo e identidade/CPF não estão disponíveis
   ou não têm política validada. Ver `CORE_PENDENCIAS.md`.

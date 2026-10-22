@@ -19,9 +19,10 @@
    cancelamentos e passagem da data do evento. O código invalida eventos,
    combos e pedidos, mas não há CDC de todas as views auxiliares. O gate de
    indicadores não poderá abrir antes do reconciliador completo.
-8. Homologação PostgreSQL Docker local e os 20 cenários mínimos ainda devem
-   ser executados/expandidos. Docker Desktop não iniciou no ambiente desta
-   execução; não substituir esse teste por produção.
+8. A homologação sintética PostgreSQL 16.13 passou com 20 testes de integração,
+   mas não substitui a reconciliação histórica real. As RAW versionadas
+   declaram `pedido_id` NOT NULL; inscrição com pedido NULL está suportada na
+   CORE mas não há fixture de origem contratualmente válida para esse caso.
 9. Antes de produção: revisão de DDL/índices, cardinalidade e planos no
    `Atendimento` em leitura, estimativa de recursos, papel mínimo, backup,
    janela, aprovação explícita e carga inicial supervisionada. Nenhuma dessas

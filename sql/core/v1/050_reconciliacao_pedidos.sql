@@ -86,11 +86,13 @@ UPDATE core.fato_pedido f SET
         OR a.qtd_status IS DISTINCT FROM a.qtd_core END,
     -- Ativo só consolida quando TODAS as inscrições do pedido estão na CORE.
     -- Totais comerciais excluem canceladas, mas taxa segue segregada.
-    valor_bruto_pedido=CASE WHEN f.origem='ativo'
+    valor_bruto_pedido=CASE WHEN f.origem='magento'
+        THEN f.valor_bruto_pedido WHEN f.origem='ativo'
         AND a.qtd_core=ac.qtd_staging AND a.qtd_bruto=a.qtd_core
         AND a.qtd_status=a.qtd_core
         THEN a.bruto ELSE NULL END,
-    valor_liquido_pedido=CASE WHEN f.origem='ativo'
+    valor_liquido_pedido=CASE WHEN f.origem='magento'
+        THEN f.valor_liquido_pedido WHEN f.origem='ativo'
         AND a.qtd_core=ac.qtd_staging AND a.qtd_liquido=a.qtd_core
         AND a.qtd_status=a.qtd_core
         THEN a.liquido ELSE NULL END,
