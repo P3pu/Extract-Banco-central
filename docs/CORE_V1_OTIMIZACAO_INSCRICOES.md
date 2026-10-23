@@ -20,6 +20,14 @@ por inscrição/pedido. Os SQL de negócio são os mesmos, com referências às
 projeções temporárias durante essa execução. Nenhuma tabela ou view RAW/STAGING
 é modificada. O cache desaparece quando a conexão fecha.
 
+O primeiro lote real de 100.000 IDs excedeu 60 segundos e foi revertido. Uma
+medição de 10.000 IDs terminou em 45 segundos; a reconciliação de pedidos
+consumia quase todo o tempo. Por isso o cache Ativo passou a guardar a
+contagem por `id_pedido`, calculada uma única vez da RAW (grão 1:1 da view
+`staging.ativo_inscricao`). O CTE de cobertura em `050` lê essa contagem
+pré-agregada; todas as demais regras financeiras foram mantidas. O tamanho
+seguro do lote ainda precisa ser medido no banco real antes da sequência.
+
 ## Segurança operacional
 
 - Destino `Atendimento` continua exigindo `--approve-production` e

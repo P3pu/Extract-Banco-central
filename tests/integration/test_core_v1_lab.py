@@ -178,6 +178,11 @@ def test_optimized_cache_matches_existing_derivation_and_is_temporary():
         runner.prepare_inscription_cache(conn)
         assert runner.source_range_has_rows(conn, 4000, 5999)
         assert not runner.source_range_has_rows(conn, 8000, 8999)
+        assert conn.execute(
+            "SELECT qtd_staging FROM pg_temp.core_v1_ativo_inscricao_count_cache "
+            "WHERE pedido_id=3001").fetchone()[0] == conn.execute(
+            "SELECT count(*) FROM staging.ativo_inscricao WHERE pedido_id=3001"
+        ).fetchone()[0]
         runner.run_range(conn, "inscriptions", 0, 10000,
                          date(2026, 10, 22), cached=True)
         after = conn.execute(

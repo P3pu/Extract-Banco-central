@@ -90,8 +90,9 @@ INSCRIPTION_CACHE = (
                quantidade_cancelada,quantidade_reembolsada,valor_linha,desconto
         FROM staging.magento_item_pedido WHERE eh_bundle
     """, ("item_id", "pedido_id")),
-    ("core_v1_ativo_inscricao_pedido_cache", """
-        SELECT id_pedido AS pedido_id FROM raw.ativo_pedido_evento
+    ("core_v1_ativo_inscricao_count_cache", """
+        SELECT id_pedido AS pedido_id,COUNT(*) AS qtd_staging
+        FROM raw.ativo_pedido_evento GROUP BY id_pedido
     """, ("pedido_id",)),
 )
 CACHE_REFS = {
@@ -101,6 +102,19 @@ CACHE_REFS = {
     "staging.magento_pedido_regra": "pg_temp.core_v1_magento_pedido_regra_cache",
     "staging.magento_item_pedido": "pg_temp.core_v1_magento_bundle_pai_cache",
 }
+COVERAGE_CTE = """ativo_cobertura AS (
+    SELECT i.pedido_id,COUNT(*) qtd_staging
+    FROM staging.ativo_inscricao i
+    WHERE i.pedido_id IN (SELECT pedido_id_origem FROM pedidos
+                          WHERE origem='ativo')
+    GROUP BY i.pedido_id
+)"""
+COVERAGE_CTE_CACHED = """ativo_cobertura AS (
+    SELECT i.pedido_id,i.qtd_staging
+    FROM pg_temp.core_v1_ativo_inscricao_count_cache i
+    WHERE i.pedido_id IN (SELECT pedido_id_origem FROM pedidos
+                          WHERE origem='ativo')
+)"""
 
 
 def require_env(key: str) -> str:
@@ -208,8 +222,9 @@ def inscription_sql(name: str, cached: bool) -> str:
     for source, target in CACHE_REFS.items():
         body = body.replace(source, target)
     if name == "050_reconciliacao_pedidos.sql":
-        body = body.replace("staging.ativo_inscricao",
-                            "pg_temp.core_v1_ativo_inscricao_pedido_cache")
+        if body.count(COVERAGE_CTE) != 1:
+            raise RuntimeError("Contrato da reconciliação Ativo mudou")
+        body = body.replace(COVERAGE_CTE, COVERAGE_CTE_CACHED)
     return body
 
 

@@ -72,7 +72,8 @@ def test_cached_sql_rewrites_only_the_intended_views():
     assert "pg_temp.core_v1_magento_inscricao_cache" in base
     assert "pg_temp.core_v1_magento_bundle_componente_cache" in mag
     assert "pg_temp.core_v1_magento_bundle_pai_cache" in mag
-    assert "pg_temp.core_v1_ativo_inscricao_pedido_cache" in rec
+    assert "pg_temp.core_v1_ativo_inscricao_count_cache" in rec
+    assert "i.qtd_staging" in rec
     assert "staging.ativo_inscricao" in runner.inscription_sql(
         "050_reconciliacao_pedidos.sql", cached=False)
 
