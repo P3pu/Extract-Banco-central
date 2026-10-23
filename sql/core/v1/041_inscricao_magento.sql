@@ -39,6 +39,7 @@ WITH filhos AS (
     FROM core.fato_inscricao f
     JOIN staging.magento_inscricao i ON i.inscricao_id=f.inscricao_id_origem
     JOIN staging.magento_item_pedido pai ON pai.item_id=i.inscricao_id
+      AND pai.item_id BETWEEN %(id_min)s AND %(id_max)s
     LEFT JOIN filhos ON filhos.inscricao_item_id=i.inscricao_id
     LEFT JOIN regras ON regras.pedido_id=i.pedido_id
     LEFT JOIN staging.magento_pedido p ON p.pedido_id=i.pedido_id

@@ -36,6 +36,14 @@ consultam esses resumos; as expressões de soma, precedência de desconto e
 validação de quantidade permanecem equivalentes às originais. A equivalência
 de valores é testada em fixtures sintéticas antes da medição real.
 
+A medição por etapa no Atendimento mostrou aumento não linear dos custos de
+derivação Magento e reconciliação conforme a faixa cresce. A junção com o
+bundle pai agora repete explicitamente o limite da chave de inscrição, e a
+reconciliação seleciona pedidos Ativo/Magento por ramos separados para usar
+o índice existente `(origem, inscricao_id_origem)`. Nenhuma regra financeira
+foi alterada. O tamanho de lote continua condicionado à medição real e aos
+limites de CPU, memória e tempo do servidor.
+
 ## Segurança operacional
 
 - Destino `Atendimento` continua exigindo `--approve-production` e

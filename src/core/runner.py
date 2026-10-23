@@ -11,6 +11,7 @@ import hashlib
 import os
 from pathlib import Path
 import sys
+import time
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -139,6 +140,19 @@ COVERAGE_CTE_CACHED = """ativo_cobertura AS (
     WHERE i.pedido_id IN (SELECT pedido_id_origem FROM pedidos
                           WHERE origem='ativo')
 )"""
+PEDIDOS_CTE_CACHED = """WITH pedidos AS (
+    SELECT origem,pedido_id_origem
+    FROM core.fato_inscricao
+    WHERE origem='ativo'
+      AND inscricao_id_origem BETWEEN %(id_min)s AND %(id_max)s
+      AND pedido_id_origem IS NOT NULL
+    UNION
+    SELECT origem,pedido_id_origem
+    FROM core.fato_inscricao
+    WHERE origem='magento'
+      AND inscricao_id_origem BETWEEN %(id_min)s AND %(id_max)s
+      AND pedido_id_origem IS NOT NULL
+"""
 
 
 def replace_cte(body: str, start_marker: str, end_marker: str,
@@ -272,6 +286,9 @@ def inscription_sql(name: str, cached: bool) -> str:
 """)
     if name == "050_reconciliacao_pedidos.sql":
         body = replace_cte(
+            body, "WITH pedidos AS (", "), magento_itens AS (",
+            PEDIDOS_CTE_CACHED)
+        body = replace_cte(
             body, "magento_itens AS (", "), eventos AS (",
             """magento_itens AS (
     SELECT pedido_id,desconto_itens,bruto_itens,qtd_bundles
@@ -366,10 +383,13 @@ def run_range(conn: psycopg.Connection, scope: str, low: int, high: int,
                 else:
                     unique_source_grain(conn, scope, low, high)
                 for name in STEPS[scope]:
+                    started = time.monotonic()
                     result = conn.execute(inscription_sql(name, cached),
                                           {"id_min": low, "id_max": high,
                                            "as_of_date": as_of})
                     total += max(result.rowcount, 0)
+                    print(f"CORE_V1_STEP_OK {scope} {low} {high} {name} "
+                          f"seconds={time.monotonic() - started:.2f}", flush=True)
                 conn.execute(
                     "UPDATE core.core_etl_execucao SET status='SUCCEEDED',"
                     "encerrada_em=clock_timestamp(),linhas_processadas=%s "
