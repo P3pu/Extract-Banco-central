@@ -90,6 +90,25 @@ máximo da RAW antes de ativar esse modo. O contrato foi testado no Docker
 com rejeição da fronteira insegura e carga sintética idempotente Ativo-only;
 a execução padrão com caches completos permanece inalterada.
 
+O comando versionado `python -m src.core.verified_bulk` encapsula as faixas,
+o lock global, os caches de sessão, a conferência RAW→CORE a cada bloco, o
+gate de indicadores e o limite de crescimento. Ele exige `CORE_PG_*` em
+ambiente seguro; para `Atendimento`, também exige o argumento explícito
+`--approve-production` e o gate `CORE_PRODUCTION_APPROVAL`. Não lê segredos
+do Git. Exemplo de parâmetros operacionais, após configurar o túnel SSH e
+as variáveis de ambiente fora do repositório:
+
+```text
+python -m src.core.verified_bulk --min-id 13346000 --max-id 14345999 \
+  --chunk-size 20000 --audit-span 200000 --max-db-growth-gib 2 \
+  --ativo-only --as-of 2026-10-22 --approve-production
+```
+
+Após perda de conexão, consultar `core.core_etl_execucao`, sessões CORE e
+contagens da última faixa antes de escolher o próximo `--min-id`. Um lote
+`RUNNING` abandonado requer revisão e encerramento auditado; a ferramenta
+não o ignora nem presume sucesso.
+
 ## Segurança operacional
 
 - Destino `Atendimento` continua exigindo `--approve-production` e

@@ -108,6 +108,17 @@ def test_ativo_only_cache_requires_range_above_magento_max():
     assert 'name.startswith("core_v1_magento_")' in body
 
 
+def test_verified_bulk_keeps_production_guard_and_quality_gate():
+    import inspect
+    from src.core import verified_bulk
+    body = inspect.getsource(verified_bulk.main)
+    assert "runner.validate_destination(conn, args.approve_production)" in body
+    assert "runner.run_range(" in body
+    assert "SOURCE_CORE_COUNT_DIVERGENCE" in body
+    assert "INDICATOR_GATE_OPEN" in body
+    assert "DB_GROWTH_LIMIT" in body
+
+
 def test_zero_id_migration_is_core_only_and_versioned():
     path = SQL / "007_core_alerta_zero_id.sql"
     body = path.read_text(encoding="utf-8")
