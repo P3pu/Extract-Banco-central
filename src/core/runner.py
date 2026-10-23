@@ -123,6 +123,12 @@ INSCRIPTION_CACHE = (
         SELECT NULL::text AS origem,NULL::bigint AS pedido_id_origem
         WHERE false
     """, ("origem,pedido_id_origem",)),
+    ("core_v1_batch_magento_inscricao_cache", """
+        SELECT inscricao_key,origem,inscricao_id_origem,conteudo_hash,
+               flag_evento_teste,flag_evento_nao_mapeado,
+               flag_pedido_nao_encontrado,data_evento
+        FROM core.fato_inscricao WHERE false
+    """, ("inscricao_id_origem",)),
 )
 CACHE_REFS = {
     "staging.magento_inscricao": "pg_temp.core_v1_magento_inscricao_cache",
@@ -278,6 +284,24 @@ def refresh_batch_pedidos(conn: psycopg.Connection, low: int, high: int) -> None
     conn.execute("ANALYZE pg_temp.core_v1_batch_pedidos_cache")
 
 
+def refresh_batch_magento(conn: psycopg.Connection, low: int, high: int) -> None:
+    """Expõe ao planner o grão Magento já inserido nesta transação."""
+    conn.execute("TRUNCATE pg_temp.core_v1_batch_magento_inscricao_cache")
+    conn.execute("""
+        INSERT INTO pg_temp.core_v1_batch_magento_inscricao_cache
+            (inscricao_key,origem,inscricao_id_origem,conteudo_hash,
+             flag_evento_teste,flag_evento_nao_mapeado,
+             flag_pedido_nao_encontrado,data_evento)
+        SELECT inscricao_key,origem,inscricao_id_origem,conteudo_hash,
+               flag_evento_teste,flag_evento_nao_mapeado,
+               flag_pedido_nao_encontrado,data_evento
+        FROM core.fato_inscricao
+        WHERE origem='magento'
+          AND inscricao_id_origem BETWEEN %s AND %s
+    """, (low, high))
+    conn.execute("ANALYZE pg_temp.core_v1_batch_magento_inscricao_cache")
+
+
 def inscription_sql(name: str, cached: bool) -> str:
     body = (SQL / name).read_text(encoding="utf-8")
     if not cached:
@@ -285,6 +309,13 @@ def inscription_sql(name: str, cached: bool) -> str:
     for source, target in CACHE_REFS.items():
         body = body.replace(source, target)
     if name == "041_inscricao_magento.sql":
+        old = ("FROM core.fato_inscricao f\n"
+               "    JOIN pg_temp.core_v1_magento_inscricao_cache i")
+        new = ("FROM pg_temp.core_v1_batch_magento_inscricao_cache f\n"
+               "    JOIN pg_temp.core_v1_magento_inscricao_cache i")
+        if body.count(old) != 1:
+            raise RuntimeError("Contrato da derivação Magento mudou")
+        body = body.replace(old, new)
         body = replace_cte(
             body, "WITH filhos AS (", "), regras AS (",
             """WITH filhos AS (
@@ -400,6 +431,8 @@ def run_range(conn: psycopg.Connection, scope: str, low: int, high: int,
                     unique_source_grain(conn, scope, low, high)
                 for name in STEPS[scope]:
                     started = time.monotonic()
+                    if cached and name == "041_inscricao_magento.sql":
+                        refresh_batch_magento(conn, low, high)
                     if cached and name == "050_reconciliacao_pedidos.sql":
                         refresh_batch_pedidos(conn, low, high)
                     result = conn.execute(inscription_sql(name, cached),

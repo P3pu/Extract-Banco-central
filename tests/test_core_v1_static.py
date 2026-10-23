@@ -72,6 +72,9 @@ def test_cached_sql_rewrites_only_the_intended_views():
     assert "pg_temp.core_v1_magento_inscricao_cache" in base
     assert "pg_temp.core_v1_magento_bundle_componente_cache" not in mag
     assert "pg_temp.core_v1_magento_bundle_pai_cache" in mag
+    assert "FROM pg_temp.core_v1_batch_magento_inscricao_cache f" in mag
+    assert "core_v1_batch_magento_inscricao_cache" in [
+        row[0] for row in runner.INSCRIPTION_CACHE]
     assert "pg_temp.core_v1_magento_child_summary_cache" in mag
     assert "pg_temp.core_v1_magento_order_summary_cache" in mag
     assert "pg_temp.core_v1_magento_order_summary_cache" in rec

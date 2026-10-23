@@ -63,6 +63,16 @@ da faixa. A seleção de pedidos temporária é reconstruída e analisada em
 cada transação, impedindo o uso de estimativas defasadas para linhas recém-
 inseridas.
 
+A derivação Magento também recebia estimativa defasada para inscrições
+inseridas na mesma transação. Uma projeção temporária e analisada do lote
+passou a alimentar apenas essa derivação. No Atendimento, a faixa
+264.000–273.999 concluiu em 10,9 s, com 1,24 s na derivação Magento, ante
+cerca de 20–24 s nas faixas anteriores. Um piloto de 50.000 IDs mistos
+(274.000–323.999) atingiu o timeout na reconciliação e foi revertido; esse
+tamanho não está aprovado. A carga restante deve usar no máximo 20.000 IDs
+por transação, mantendo 60 s por consulta e conferindo origem, contagens,
+espaço e gate de indicadores a cada bloco.
+
 ## Segurança operacional
 
 - Destino `Atendimento` continua exigindo `--approve-production` e
