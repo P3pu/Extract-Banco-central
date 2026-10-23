@@ -23,6 +23,7 @@ MIGRATIONS = (
     ROOT / "sql/core/proposed/001_core_ddl.sql",
     ROOT / "sql/core/proposed/002_core_helpers.sql",
     SQL / "006_core_v1_extensions.sql",
+    SQL / "007_core_alerta_zero_id.sql",
 )
 STEPS = {
     "events": ("010_eventos.sql", "011_evento_map.sql",
@@ -237,10 +238,22 @@ def migrate(conn: psycopg.Connection) -> None:
     existing = conn.execute("SELECT to_regclass('core.schema_migration')").fetchone()[0]
     if existing is not None:
         applied = dict(conn.execute("SELECT migration_id,sha256 FROM core.schema_migration"))
-        for path in MIGRATIONS:
+        for path in MIGRATIONS[:-1]:
             digest = hashlib.sha256(path.read_bytes()).hexdigest()
             if applied.get(path.name) != digest:
                 raise RuntimeError(f"Migration ausente/divergente: {path.name}")
+        extension = MIGRATIONS[-1]
+        digest = hashlib.sha256(extension.read_bytes()).hexdigest()
+        if extension.name in applied:
+            if applied[extension.name] != digest:
+                raise RuntimeError(f"Migration divergente: {extension.name}")
+            return
+        with conn.transaction():
+            conn.execute(extension.read_text(encoding="utf-8"))
+            conn.execute(
+                "INSERT INTO core.schema_migration(migration_id,sha256) VALUES (%s,%s)",
+                (extension.name, digest),
+            )
         return
     if conn.execute("SELECT to_regclass('core.fato_pedido')").fetchone()[0] is not None:
         raise RuntimeError("CORE parcial existente: revisão manual necessária")

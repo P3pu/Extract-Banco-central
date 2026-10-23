@@ -7,6 +7,12 @@ Em 2026-10-23, a estrutura CORE e os pedidos foram carregados no banco
 `030_inscricao_base.sql`, `041_inscricao_magento.sql` e
 `050_reconciliacao_pedidos.sql`.
 
+No piloto após a otimização, o item bundle Magento de ID `0` revelou outra
+incompatibilidade: o fato aceitava zero, mas o alerta de qualidade exigia ID
+positivo. A migração `007_core_alerta_zero_id.sql` altera apenas essa
+restrição CORE para `>= 0`. O lote falho foi revertido e auditado antes da
+correção; nenhum ID é renumerado ou descartado.
+
 O comando `bulk-inscriptions` materializa uma vez, na própria sessão, somente
 os campos necessários das views STAGING Magento e os IDs de pedido das
 inscrições Ativo. Cria índices e estatísticas **temporários** para as buscas
@@ -35,7 +41,9 @@ projeções temporárias durante essa execução. Nenhuma tabela ou view RAW/STA
 
 Em volume Docker novo, as 31 views STAGING compilaram; migrations, eventos,
 combos, pedidos e o comando `bulk-inscriptions` executaram com fixtures
-sintéticas. A suíte V1/Fase B/C1/C2 passou: 65 testes e 18 subtestes. Foi
+sintéticas. A suíte V1/Fase B/C1/C2 passou após a correção de ID zero:
+67 testes e 18 subtestes. O upgrade 006→007 foi testado separadamente em
+volume local previamente migrado. Foi
 verificada equivalência entre derivação com cache e execução original,
 idempotência, finanças Magento/Ativo, status, órfãos e ausência de cache
 permanente. Volume preservado e container parado.

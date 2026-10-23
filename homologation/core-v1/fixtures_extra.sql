@@ -105,4 +105,21 @@ VALUES (4701,3070,NULL,9002,'SYN-BUNDLE','bundle',60,60,60,60,0,
        (4704,3070,4703,9003,'SYN-CHILD-A','simple',60,60,60,60,0,
         1,0,0,'2025-01-01','2025-01-01','synthetic','2025-01-01T00:00:00Z',
         '00000000-0000-0000-0000-000000000001');
+-- Magento usa legitimamente item_id=0; o alerta CORE deve preservá-lo.
+INSERT INTO raw.magento_sales_order
+  (entity_id,increment_id,state,status,subtotal,discount_amount,grand_total,
+   total_item_count,total_qty_ordered,created_at,updated_at,
+   _source,_extracted_at,_batch_id)
+VALUES (3090,'SYN-M-3090','processing','approved',10,-2,8,1,1,
+        '2025-01-01 12:00:00','2025-01-01 12:00:00',
+        'synthetic','2025-01-01T00:00:00Z',
+        '00000000-0000-0000-0000-000000000001');
+INSERT INTO raw.magento_sales_order_item
+  (item_id,order_id,parent_item_id,product_id,sku,product_type,
+   price,base_price,row_total,base_row_total,discount_amount,
+   qty_ordered,qty_canceled,qty_refunded,created_at,updated_at,
+   _source,_extracted_at,_batch_id)
+VALUES (0,3090,NULL,9002,'SYN-ZERO-BUNDLE','bundle',10,10,10,10,0,
+        1,0,0,'2025-01-01','2025-01-01','synthetic','2025-01-01T00:00:00Z',
+        '00000000-0000-0000-0000-000000000001');
 COMMIT;

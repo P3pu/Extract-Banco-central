@@ -82,6 +82,15 @@ def test_indicator_gate_stays_closed():
     assert "WHERE FALSE" in migration
 
 
+def test_zero_id_migration_is_core_only_and_versioned():
+    path = SQL / "007_core_alerta_zero_id.sql"
+    body = path.read_text(encoding="utf-8")
+    assert path in runner.MIGRATIONS
+    assert "ALTER TABLE core.core_alerta_qualidade" in body
+    assert "identificador_origem >= 0" in body
+    assert "raw." not in body and "staging." not in body
+
+
 def test_orphans_and_source_identity_are_not_dropped():
     base = (SQL / "030_inscricao_base.sql").read_text(encoding="utf-8")
     assert "LEFT JOIN core.fato_pedido" in base

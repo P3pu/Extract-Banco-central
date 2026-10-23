@@ -84,6 +84,15 @@ def test_grains_and_gate(db):
                "WHERE origem='magento' AND inscricao_id_origem IN (4002,4003)")[0] == 0
 
 
+def test_magento_zero_id_and_quality_alert_are_preserved(db):
+    assert one(db, "SELECT pedido_id_origem FROM core.fato_inscricao "
+               "WHERE origem='magento' AND inscricao_id_origem=0")[0] == 3090
+    assert one(db, "SELECT count(*) FROM core.core_alerta_qualidade "
+               "WHERE origem='magento' AND entidade='inscricao' "
+               "AND identificador_origem=0 AND ativo")[0] >= 1
+    assert one(db, "SELECT count(*) FROM core.fato_inscricao_indicadores_validos")[0] == 0
+
+
 def test_same_order_id_two_sources_and_cancelled_registration(db):
     assert one(db, "SELECT count(*) FROM core.fato_pedido "
                "WHERE pedido_id_origem=3001")[0] == 2
