@@ -28,6 +28,14 @@ contagem por `id_pedido`, calculada uma única vez da RAW (grão 1:1 da view
 pré-agregada; todas as demais regras financeiras foram mantidas. O tamanho
 seguro do lote ainda precisa ser medido no banco real antes da sequência.
 
+Uma segunda medição de 10.000 IDs mostrou que a consulta Magento e a
+reconciliação ainda repetiam somas de filhos/bundles por pedido, terminando
+esta última em timeout. O cache agora pré-agrega componentes por bundle e
+descontos/brutos por pedido uma vez por sessão. Os dois CTEs consumidores
+consultam esses resumos; as expressões de soma, precedência de desconto e
+validação de quantidade permanecem equivalentes às originais. A equivalência
+de valores é testada em fixtures sintéticas antes da medição real.
+
 ## Segurança operacional
 
 - Destino `Atendimento` continua exigindo `--approve-production` e

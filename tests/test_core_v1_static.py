@@ -70,8 +70,11 @@ def test_cached_sql_rewrites_only_the_intended_views():
     mag = runner.inscription_sql("041_inscricao_magento.sql", cached=True)
     rec = runner.inscription_sql("050_reconciliacao_pedidos.sql", cached=True)
     assert "pg_temp.core_v1_magento_inscricao_cache" in base
-    assert "pg_temp.core_v1_magento_bundle_componente_cache" in mag
+    assert "pg_temp.core_v1_magento_bundle_componente_cache" not in mag
     assert "pg_temp.core_v1_magento_bundle_pai_cache" in mag
+    assert "pg_temp.core_v1_magento_child_summary_cache" in mag
+    assert "pg_temp.core_v1_magento_order_summary_cache" in mag
+    assert "pg_temp.core_v1_magento_order_summary_cache" in rec
     assert "pg_temp.core_v1_ativo_inscricao_count_cache" in rec
     assert "i.qtd_staging" in rec
     assert "staging.ativo_inscricao" in runner.inscription_sql(

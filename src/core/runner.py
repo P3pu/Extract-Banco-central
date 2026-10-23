@@ -90,6 +90,30 @@ INSCRIPTION_CACHE = (
                quantidade_cancelada,quantidade_reembolsada,valor_linha,desconto
         FROM staging.magento_item_pedido WHERE eh_bundle
     """, ("item_id", "pedido_id")),
+    ("core_v1_magento_child_summary_cache", """
+        SELECT inscricao_item_id,
+               SUM(desconto) FILTER (WHERE desconto IS NOT NULL) desconto,
+               COUNT(desconto) qtd_descontos,
+               SUM(valor_linha) FILTER (WHERE valor_linha IS NOT NULL) bruto
+        FROM pg_temp.core_v1_magento_bundle_componente_cache
+        GROUP BY inscricao_item_id
+    """, ("inscricao_item_id",)),
+    ("core_v1_magento_order_summary_cache", """
+        SELECT pai.pedido_id,
+               SUM(CASE WHEN cf.desconto IS NOT NULL AND cf.desconto<>0
+                        THEN cf.desconto ELSE COALESCE(pai.desconto,0) END)
+                   desconto_itens,
+               SUM(CASE WHEN pai.valor_linha IS NOT NULL
+                             AND pai.valor_linha<>0 THEN pai.valor_linha
+                        ELSE cf.bruto END) bruto_itens,
+               COUNT(*) qtd_bundles,
+               BOOL_AND(pai.desconto IS NOT NULL OR cf.desconto IS NOT NULL)
+                   componentes_presentes
+        FROM pg_temp.core_v1_magento_bundle_pai_cache pai
+        LEFT JOIN pg_temp.core_v1_magento_child_summary_cache cf
+          ON cf.inscricao_item_id=pai.item_id
+        GROUP BY pai.pedido_id
+    """, ("pedido_id",)),
     ("core_v1_ativo_inscricao_count_cache", """
         SELECT id_pedido AS pedido_id,COUNT(*) AS qtd_staging
         FROM raw.ativo_pedido_evento GROUP BY id_pedido
@@ -115,6 +139,15 @@ COVERAGE_CTE_CACHED = """ativo_cobertura AS (
     WHERE i.pedido_id IN (SELECT pedido_id_origem FROM pedidos
                           WHERE origem='ativo')
 )"""
+
+
+def replace_cte(body: str, start_marker: str, end_marker: str,
+                replacement: str) -> str:
+    if body.count(start_marker) != 1 or body.count(end_marker) != 1:
+        raise RuntimeError("Contrato de CTE CORE mudou")
+    start = body.index(start_marker)
+    end = body.index(end_marker, start)
+    return body[:start] + replacement + body[end:]
 
 
 def require_env(key: str) -> str:
@@ -221,7 +254,31 @@ def inscription_sql(name: str, cached: bool) -> str:
         return body
     for source, target in CACHE_REFS.items():
         body = body.replace(source, target)
+    if name == "041_inscricao_magento.sql":
+        body = replace_cte(
+            body, "WITH filhos AS (", "), regras AS (",
+            """WITH filhos AS (
+    SELECT inscricao_item_id,desconto,qtd_descontos,bruto
+    FROM pg_temp.core_v1_magento_child_summary_cache
+    WHERE inscricao_item_id BETWEEN %(id_min)s AND %(id_max)s
+""")
+        body = replace_cte(
+            body, "conciliacao AS (", "), final AS (",
+            """conciliacao AS (
+    SELECT pedido_id,desconto_itens,bruto_itens,qtd_bundles,
+           componentes_presentes
+    FROM pg_temp.core_v1_magento_order_summary_cache
+    WHERE pedido_id IN (SELECT DISTINCT pedido_id FROM base)
+""")
     if name == "050_reconciliacao_pedidos.sql":
+        body = replace_cte(
+            body, "magento_itens AS (", "), eventos AS (",
+            """magento_itens AS (
+    SELECT pedido_id,desconto_itens,bruto_itens,qtd_bundles
+    FROM pg_temp.core_v1_magento_order_summary_cache
+    WHERE pedido_id IN (SELECT pedido_id_origem FROM pedidos
+                        WHERE origem='magento')
+""")
         if body.count(COVERAGE_CTE) != 1:
             raise RuntimeError("Contrato da reconciliação Ativo mudou")
         body = body.replace(COVERAGE_CTE, COVERAGE_CTE_CACHED)
