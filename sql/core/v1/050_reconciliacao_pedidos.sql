@@ -5,7 +5,7 @@ WITH pedidos AS (
     WHERE inscricao_id_origem BETWEEN %(id_min)s AND %(id_max)s
       AND pedido_id_origem IS NOT NULL
 ), magento_itens AS (
-    SELECT pai.pedido_id,
+    SELECT 'magento'::text origem,pai.pedido_id,
            SUM(CASE WHEN COALESCE(filhos.desconto,0)<>0
                 THEN filhos.desconto ELSE COALESCE(pai.desconto,0) END)
                 desconto_itens,
@@ -35,7 +35,7 @@ WITH pedidos AS (
                     AND p.pedido_id_origem=core.fato_inscricao.pedido_id_origem)
     GROUP BY origem,pedido_id_origem
 ), ativo_valores AS (
-    SELECT f.pedido_id_origem,
+    SELECT 'ativo'::text origem,f.pedido_id_origem,
            COUNT(*) qtd_core,
            COUNT(*) FILTER (WHERE f.valor_bruto_inscricao IS NOT NULL)
               qtd_bruto,
@@ -57,7 +57,7 @@ WITH pedidos AS (
                                  WHERE origem='ativo')
     GROUP BY f.pedido_id_origem
 ), ativo_cobertura AS (
-    SELECT i.pedido_id,COUNT(*) qtd_staging
+    SELECT 'ativo'::text origem,i.pedido_id,COUNT(*) qtd_staging
     FROM staging.ativo_inscricao i
     WHERE i.pedido_id IN (SELECT pedido_id_origem FROM pedidos
                           WHERE origem='ativo')
@@ -102,12 +102,12 @@ UPDATE core.fato_pedido f SET
         THEN a.taxa ELSE NULL END,
     atualizado_core_em=clock_timestamp()
 FROM pedidos p
-LEFT JOIN magento_itens m ON p.origem='magento'
+LEFT JOIN magento_itens m ON m.origem=p.origem
                          AND m.pedido_id=p.pedido_id_origem
 LEFT JOIN eventos e ON e.origem=p.origem
                    AND e.pedido_id_origem=p.pedido_id_origem
-LEFT JOIN ativo_valores a ON p.origem='ativo'
+LEFT JOIN ativo_valores a ON a.origem=p.origem
                           AND a.pedido_id_origem=p.pedido_id_origem
-LEFT JOIN ativo_cobertura ac ON p.origem='ativo'
+LEFT JOIN ativo_cobertura ac ON ac.origem=p.origem
                              AND ac.pedido_id=p.pedido_id_origem
 WHERE f.origem=p.origem AND f.pedido_id_origem=p.pedido_id_origem;

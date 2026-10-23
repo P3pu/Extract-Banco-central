@@ -119,6 +119,10 @@ INSCRIPTION_CACHE = (
         SELECT id_pedido AS pedido_id,COUNT(*) AS qtd_staging
         FROM raw.ativo_pedido_evento GROUP BY id_pedido
     """, ("pedido_id",)),
+    ("core_v1_batch_pedidos_cache", """
+        SELECT NULL::text AS origem,NULL::bigint AS pedido_id_origem
+        WHERE false
+    """, ("origem,pedido_id_origem",)),
 )
 CACHE_REFS = {
     "staging.magento_inscricao": "pg_temp.core_v1_magento_inscricao_cache",
@@ -128,30 +132,21 @@ CACHE_REFS = {
     "staging.magento_item_pedido": "pg_temp.core_v1_magento_bundle_pai_cache",
 }
 COVERAGE_CTE = """ativo_cobertura AS (
-    SELECT i.pedido_id,COUNT(*) qtd_staging
+    SELECT 'ativo'::text origem,i.pedido_id,COUNT(*) qtd_staging
     FROM staging.ativo_inscricao i
     WHERE i.pedido_id IN (SELECT pedido_id_origem FROM pedidos
                           WHERE origem='ativo')
     GROUP BY i.pedido_id
 )"""
 COVERAGE_CTE_CACHED = """ativo_cobertura AS (
-    SELECT i.pedido_id,i.qtd_staging
+    SELECT 'ativo'::text origem,i.pedido_id,i.qtd_staging
     FROM pg_temp.core_v1_ativo_inscricao_count_cache i
     WHERE i.pedido_id IN (SELECT pedido_id_origem FROM pedidos
                           WHERE origem='ativo')
 )"""
 PEDIDOS_CTE_CACHED = """WITH pedidos AS (
     SELECT origem,pedido_id_origem
-    FROM core.fato_inscricao
-    WHERE origem='ativo'
-      AND inscricao_id_origem BETWEEN %(id_min)s AND %(id_max)s
-      AND pedido_id_origem IS NOT NULL
-    UNION
-    SELECT origem,pedido_id_origem
-    FROM core.fato_inscricao
-    WHERE origem='magento'
-      AND inscricao_id_origem BETWEEN %(id_min)s AND %(id_max)s
-      AND pedido_id_origem IS NOT NULL
+    FROM pg_temp.core_v1_batch_pedidos_cache
 """
 
 
@@ -262,6 +257,27 @@ def prepare_inscription_cache(conn: psycopg.Connection) -> None:
         print(f"CORE_V1_CACHE_OK {name}", flush=True)
 
 
+def refresh_batch_pedidos(conn: psycopg.Connection, low: int, high: int) -> None:
+    """Atualiza somente o inventário temporário dos pedidos deste lote."""
+    conn.execute("TRUNCATE pg_temp.core_v1_batch_pedidos_cache")
+    conn.execute("""
+        INSERT INTO pg_temp.core_v1_batch_pedidos_cache
+            (origem,pedido_id_origem)
+        SELECT origem,pedido_id_origem
+        FROM core.fato_inscricao
+        WHERE origem='ativo'
+          AND inscricao_id_origem BETWEEN %s AND %s
+          AND pedido_id_origem IS NOT NULL
+        UNION
+        SELECT origem,pedido_id_origem
+        FROM core.fato_inscricao
+        WHERE origem='magento'
+          AND inscricao_id_origem BETWEEN %s AND %s
+          AND pedido_id_origem IS NOT NULL
+    """, (low, high, low, high))
+    conn.execute("ANALYZE pg_temp.core_v1_batch_pedidos_cache")
+
+
 def inscription_sql(name: str, cached: bool) -> str:
     body = (SQL / name).read_text(encoding="utf-8")
     if not cached:
@@ -291,7 +307,7 @@ def inscription_sql(name: str, cached: bool) -> str:
         body = replace_cte(
             body, "magento_itens AS (", "), eventos AS (",
             """magento_itens AS (
-    SELECT pedido_id,desconto_itens,bruto_itens,qtd_bundles
+    SELECT 'magento'::text origem,pedido_id,desconto_itens,bruto_itens,qtd_bundles
     FROM pg_temp.core_v1_magento_order_summary_cache
     WHERE pedido_id IN (SELECT pedido_id_origem FROM pedidos
                         WHERE origem='magento')
@@ -384,6 +400,8 @@ def run_range(conn: psycopg.Connection, scope: str, low: int, high: int,
                     unique_source_grain(conn, scope, low, high)
                 for name in STEPS[scope]:
                     started = time.monotonic()
+                    if cached and name == "050_reconciliacao_pedidos.sql":
+                        refresh_batch_pedidos(conn, low, high)
                     result = conn.execute(inscription_sql(name, cached),
                                           {"id_min": low, "id_max": high,
                                            "as_of_date": as_of})

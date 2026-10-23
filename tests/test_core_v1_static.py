@@ -75,9 +75,11 @@ def test_cached_sql_rewrites_only_the_intended_views():
     assert "pg_temp.core_v1_magento_child_summary_cache" in mag
     assert "pg_temp.core_v1_magento_order_summary_cache" in mag
     assert "pg_temp.core_v1_magento_order_summary_cache" in rec
-    assert "UNION\n    SELECT origem,pedido_id_origem" in rec
-    assert "WHERE origem='ativo'" in rec
-    assert "WHERE origem='magento'" in rec
+    assert "LEFT JOIN ativo_cobertura ac ON ac.origem=p.origem" in rec
+    assert "LEFT JOIN magento_itens m ON m.origem=p.origem" in rec
+    assert "SELECT 'ativo'::text origem,i.pedido_id" in rec
+    assert "FROM pg_temp.core_v1_batch_pedidos_cache" in rec
+    assert "core_v1_batch_pedidos_cache" in [row[0] for row in runner.INSCRIPTION_CACHE]
     assert "pg_temp.core_v1_ativo_inscricao_count_cache" in rec
     assert "i.qtd_staging" in rec
     assert "staging.ativo_inscricao" in runner.inscription_sql(

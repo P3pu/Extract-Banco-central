@@ -44,6 +44,25 @@ o índice existente `(origem, inscricao_id_origem)`. Nenhuma regra financeira
 foi alterada. O tamanho de lote continua condicionado à medição real e aos
 limites de CPU, memória e tempo do servidor.
 
+O plano real da reconciliação revelou estimativa de apenas um pedido para
+uma faixa que acabara de ser inserida na mesma transação. Isso levava a
+junções aninhadas quadráticas sobre milhares de pedidos. Antes do SQL de
+reconciliação, o executor agora preenche e analisa uma tabela **temporária de
+sessão** com os pedidos da faixa. O CTE `pedidos` usa essa tabela, sem DDL
+permanente. No Atendimento, a faixa Ativo 8.006.000–8.025.999, que antes
+atingia 60 s e era revertida, concluiu em 16,6 s; a consulta de
+reconciliação levou 10,8 s. Este resultado não autoriza presumir o mesmo
+tempo para todas as faixas; pilotos mistos e monitoramento contínuo são
+necessários.
+
+A faixa mista Ativo/Magento 44.000–63.999 concluiu em 33,4 s, com 22,1 s
+na derivação Magento e 5,6 s na reconciliação. A escolha inicial para carga
+contínua é de no máximo 10.000 IDs nas faixas mistas e 20.000 nas faixas
+somente Ativo; qualquer timeout ou divergência exige interrupção e revisão
+da faixa. A seleção de pedidos temporária é reconstruída e analisada em
+cada transação, impedindo o uso de estimativas defasadas para linhas recém-
+inseridas.
+
 ## Segurança operacional
 
 - Destino `Atendimento` continua exigindo `--approve-production` e
