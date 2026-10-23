@@ -94,6 +94,12 @@ def test_indicator_gate_stays_closed():
     assert "WHERE FALSE" in migration
 
 
+def test_abandoned_transaction_has_session_timeout():
+    import inspect
+    assert "idle_in_transaction_session_timeout=120000" in inspect.getsource(
+        runner.connect)
+
+
 def test_zero_id_migration_is_core_only_and_versioned():
     path = SQL / "007_core_alerta_zero_id.sql"
     body = path.read_text(encoding="utf-8")

@@ -185,7 +185,8 @@ def connect() -> psycopg.Connection:
         password=require_env("CORE_PG_PASSWORD"), sslmode=sslmode,
         sslrootcert=os.environ.get("CORE_PG_SSLROOTCERT") or None,
         connect_timeout=10, application_name="bcd-core-v1",
-        options="-c statement_timeout=60000 -c lock_timeout=5000 -c timezone=UTC",
+        options=("-c statement_timeout=60000 -c lock_timeout=5000 "
+                 "-c idle_in_transaction_session_timeout=120000 -c timezone=UTC"),
         autocommit=True,
     )
 

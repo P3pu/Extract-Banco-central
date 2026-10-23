@@ -73,6 +73,16 @@ tamanho não está aprovado. A carga restante deve usar no máximo 20.000 IDs
 por transação, mantendo 60 s por consulta e conferindo origem, contagens,
 espaço e gate de indicadores a cada bloco.
 
+Na carga sustentada, uma perda da conexão cliente deixou um backend CORE
+`idle in transaction` e uma auditoria `RUNNING`; o lote não havia confirmado
+linhas. O backend abandonado foi identificado pelos metadados da sessão,
+encerrado isoladamente e a auditoria fechada como `FAILED/ERRO_INTERNO`
+(o contrato atual não aceita código específico para perda de conexão).
+O executor agora configura `idle_in_transaction_session_timeout=120000`
+somente em sua sessão, para limitar retenção de locks caso a conexão caia.
+Ao retomar após uma queda, conferir sessão/lock, auditoria e contagens do
+lote; nunca presumir confirmação pelo último ID impresso.
+
 ## Segurança operacional
 
 - Destino `Atendimento` continua exigindo `--approve-production` e
