@@ -68,6 +68,39 @@ KINDS = {
     "date": {"date", "timestamp without time zone", "timestamp with time zone"},
 }
 
+# Projeções exclusivamente de sessão. Nunca substituem as views STAGING nem
+# persistem dados pessoais: a seleção contém só os campos usados pela CORE.
+INSCRIPTION_CACHE = (
+    ("core_v1_magento_inscricao_cache", """
+        SELECT inscricao_id,pedido_id,evento_id,evento_sku,data_evento,
+               sku_inscricao,modalidade,categoria_origem,tamanho,status_pedido,
+               valor_bruto,batch_id,desconto_item,cupom,estado_pedido
+        FROM staging.magento_inscricao
+    """, ("inscricao_id", "pedido_id")),
+    ("core_v1_magento_bundle_componente_cache", """
+        SELECT inscricao_item_id,desconto,valor_linha
+        FROM staging.magento_bundle_componente
+    """, ("inscricao_item_id",)),
+    ("core_v1_magento_pedido_regra_cache", """
+        SELECT pedido_id,etiqueta FROM staging.magento_pedido_regra
+    """, ("pedido_id",)),
+    ("core_v1_magento_bundle_pai_cache", """
+        SELECT item_id,pedido_id,eh_bundle,quantidade_pedida,
+               quantidade_cancelada,quantidade_reembolsada,valor_linha,desconto
+        FROM staging.magento_item_pedido WHERE eh_bundle
+    """, ("item_id", "pedido_id")),
+    ("core_v1_ativo_inscricao_pedido_cache", """
+        SELECT id_pedido AS pedido_id FROM raw.ativo_pedido_evento
+    """, ("pedido_id",)),
+)
+CACHE_REFS = {
+    "staging.magento_inscricao": "pg_temp.core_v1_magento_inscricao_cache",
+    "staging.magento_bundle_componente":
+        "pg_temp.core_v1_magento_bundle_componente_cache",
+    "staging.magento_pedido_regra": "pg_temp.core_v1_magento_pedido_regra_cache",
+    "staging.magento_item_pedido": "pg_temp.core_v1_magento_bundle_pai_cache",
+}
+
 
 def require_env(key: str) -> str:
     value = os.environ.get(key, "").strip()
@@ -126,7 +159,8 @@ def schema_contract(conn: psycopg.Connection, scope: str) -> None:
                 raise RuntimeError(f"SCHEMA_DIVERGENTE: {qualified}.{column}")
 
 
-def unique_source_grain(conn: psycopg.Connection, scope: str, low: int, high: int) -> None:
+def unique_source_grain(conn: psycopg.Connection, scope: str, low: int, high: int,
+                        cached: bool = False) -> None:
     views = {
         "events": (("staging.ativo_evento", "evento_id"),
                    ("staging.magento_evento", "evento_id")),
@@ -138,6 +172,8 @@ def unique_source_grain(conn: psycopg.Connection, scope: str, low: int, high: in
     }
     # Identificadores são constantes internas, nunca entrada do usuário.
     for view, key in views[scope]:
+        if cached and view == "staging.magento_inscricao":
+            view = CACHE_REFS[view]
         query = (f"SELECT 1 FROM {view} WHERE {key} BETWEEN %s AND %s "
                  f"GROUP BY {key} HAVING COUNT(*)>1 LIMIT 1")
         if conn.execute(query, (low, high)).fetchone():
@@ -147,6 +183,42 @@ def unique_source_grain(conn: psycopg.Connection, scope: str, low: int, high: in
 def validate_range(low: int, high: int) -> None:
     if low < 0 or high < low or high - low >= 100000 or high > 9223372036854775807:
         raise ValueError("Faixa inválida: até 100000 IDs inclusivos")
+
+
+def prepare_inscription_cache(conn: psycopg.Connection) -> None:
+    """Materializa uma só vez as projeções caras, sem estruturas permanentes."""
+    if conn.execute("SELECT to_regclass('pg_temp.core_v1_magento_inscricao_cache')")\
+            .fetchone()[0] is not None:
+        raise RuntimeError("Cache de sessão já existe; abrir conexão nova")
+    for name, query, indexes in INSCRIPTION_CACHE:
+        print(f"CORE_V1_CACHE_START {name}", flush=True)
+        with conn.transaction():
+            conn.execute(f"CREATE TEMP TABLE {name} ON COMMIT PRESERVE ROWS AS {query}")
+            for column in indexes:
+                conn.execute(f"CREATE INDEX ON {name}({column})")
+            conn.execute(f"ANALYZE {name}")
+        print(f"CORE_V1_CACHE_OK {name}", flush=True)
+
+
+def inscription_sql(name: str, cached: bool) -> str:
+    body = (SQL / name).read_text(encoding="utf-8")
+    if not cached:
+        return body
+    for source, target in CACHE_REFS.items():
+        body = body.replace(source, target)
+    if name == "050_reconciliacao_pedidos.sql":
+        body = body.replace("staging.ativo_inscricao",
+                            "pg_temp.core_v1_ativo_inscricao_pedido_cache")
+    return body
+
+
+def source_range_has_rows(conn: psycopg.Connection, low: int, high: int) -> bool:
+    return conn.execute("""
+        SELECT EXISTS (SELECT 1 FROM raw.ativo_pedido_evento
+                       WHERE id_pedido_evento BETWEEN %s AND %s)
+            OR EXISTS (SELECT 1 FROM pg_temp.core_v1_magento_inscricao_cache
+                       WHERE inscricao_id BETWEEN %s AND %s)
+    """, (low, high, low, high)).fetchone()[0]
 
 
 def error_code(exc: Exception) -> str:
@@ -183,8 +255,12 @@ def migrate(conn: psycopg.Connection) -> None:
 
 
 def run_range(conn: psycopg.Connection, scope: str, low: int, high: int,
-              as_of: date) -> tuple[str, int]:
+              as_of: date, cached: bool = False) -> tuple[str, int]:
     validate_range(low, high)
+    if cached and (scope != "inscriptions" or conn.execute(
+            "SELECT to_regclass('pg_temp.core_v1_magento_inscricao_cache')"
+            ).fetchone()[0] is None):
+        raise RuntimeError("Cache de inscrições ausente/incompatível")
     if not conn.execute("SELECT pg_try_advisory_lock(21001,1)").fetchone()[0]:
         raise RuntimeError("Outra execução CORE está ativa")
     batch_id = str(uuid4())
@@ -200,9 +276,12 @@ def run_range(conn: psycopg.Connection, scope: str, low: int, high: int,
         try:
             with conn.transaction():
                 schema_contract(conn, scope)
-                unique_source_grain(conn, scope, low, high)
+                if cached:
+                    unique_source_grain(conn, scope, low, high, cached=True)
+                else:
+                    unique_source_grain(conn, scope, low, high)
                 for name in STEPS[scope]:
-                    result = conn.execute((SQL / name).read_text(encoding="utf-8"),
+                    result = conn.execute(inscription_sql(name, cached),
                                           {"id_min": low, "id_max": high,
                                            "as_of_date": as_of})
                     total += max(result.rowcount, 0)
@@ -229,30 +308,79 @@ def run_range(conn: psycopg.Connection, scope: str, low: int, high: int,
             pass
 
 
+def run_bulk_inscriptions(conn: psycopg.Connection, low: int, high: int,
+                          chunk_size: int, as_of: date) -> tuple[int, int]:
+    if low < 0 or high < low or high > 9223372036854775807:
+        raise ValueError("Faixa total inválida")
+    if not 1 <= chunk_size <= 100000:
+        raise ValueError("Lote deve conter de 1 a 100000 IDs")
+    if not conn.execute("SELECT pg_try_advisory_lock(21001,1)").fetchone()[0]:
+        raise RuntimeError("Outra execução CORE está ativa")
+    completed = 0
+    processed = 0
+    try:
+        schema_contract(conn, "inscriptions")
+        # Limite mais longo só para construir as projeções temporárias uma vez.
+        conn.execute("SET statement_timeout=300000")
+        prepare_inscription_cache(conn)
+        conn.execute("SET statement_timeout=60000")
+        cursor = low
+        first = True
+        while cursor <= high:
+            size = min(chunk_size, 1000) if first else chunk_size
+            upper = min(high, cursor + size - 1)
+            first = False
+            if source_range_has_rows(conn, cursor, upper):
+                batch, count = run_range(conn, "inscriptions", cursor, upper,
+                                         as_of, cached=True)
+                completed += 1
+                processed += count
+                print(f"CORE_V1_BULK_OK {cursor} {upper} {batch} {count}", flush=True)
+            else:
+                print(f"CORE_V1_BULK_EMPTY {cursor} {upper}", flush=True)
+            cursor = upper + 1
+        return completed, processed
+    finally:
+        try:
+            conn.execute("SELECT pg_advisory_unlock(21001,1)")
+        except psycopg.Error:
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="CORE V1 controlada, sem MySQL")
-    parser.add_argument("command", choices=("migrate", "run"))
+    parser.add_argument("command", choices=("migrate", "run", "bulk-inscriptions"))
     parser.add_argument("--scope", choices=tuple(STEPS))
     parser.add_argument("--min-id", type=int)
     parser.add_argument("--max-id", type=int)
     parser.add_argument("--as-of", type=date.fromisoformat)
+    parser.add_argument("--chunk-size", type=int, default=100000)
     parser.add_argument("--approve-production", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "run" and (
         args.scope is None or args.min_id is None or args.max_id is None
     ):
         parser.error("run requer --scope, --min-id e --max-id")
+    if args.command == "bulk-inscriptions" and (
+        args.min_id is None or args.max_id is None or args.scope is not None
+    ):
+        parser.error("bulk-inscriptions requer --min-id/--max-id, sem --scope")
     try:
         with connect() as conn:
             validate_destination(conn, args.approve_production)
             if args.command == "migrate":
                 migrate(conn)
                 print("CORE_V1_MIGRATIONS_OK")
-            else:
+            elif args.command == "run":
                 batch, count = run_range(conn, args.scope, args.min_id,
                                          args.max_id, args.as_of or
                                          datetime.now(ZoneInfo("America/Sao_Paulo")).date())
                 print(f"CORE_V1_RUN_OK batch={batch} linhas_processadas={count}")
+            else:
+                batches, count = run_bulk_inscriptions(
+                    conn, args.min_id, args.max_id, args.chunk_size,
+                    args.as_of or datetime.now(ZoneInfo("America/Sao_Paulo")).date())
+                print(f"CORE_V1_BULK_COMPLETE lotes={batches} linhas_processadas={count}")
         return 0
     except Exception as exc:
         # Apenas tipo/código, nunca detalhes do driver ou SQL com parâmetros.

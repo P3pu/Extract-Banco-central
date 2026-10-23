@@ -45,11 +45,36 @@ def test_production_guard(monkeypatch):
 
 def test_no_full_or_mysql_route():
     body = (Path(runner.__file__)).read_text(encoding="utf-8").lower()
-    assert 'choices=("migrate", "run")' in body
+    assert 'choices=("migrate", "run", "bulk-inscriptions")' in body
     assert "pymysql" not in body
     assert "--approve-production" in body
     assert "pg_try_advisory_lock" in body
     assert "with conn.transaction()" in body
+
+
+def test_cache_is_session_only_and_reuses_staging_contracts():
+    body = (Path(runner.__file__)).read_text(encoding="utf-8").lower()
+    assert "create temp table" in body
+    assert "on commit preserve rows" in body
+    assert "create index on" in body
+    assert "create unlogged table" not in body
+    assert "create materialized view" not in body
+    assert "set statement_timeout=60000" in body
+    assert "pg_try_advisory_lock(21001,1)" in body
+    assert not any("cpf" in query.lower() or "email" in query.lower()
+                   for _, query, _ in runner.INSCRIPTION_CACHE)
+
+
+def test_cached_sql_rewrites_only_the_intended_views():
+    base = runner.inscription_sql("030_inscricao_base.sql", cached=True)
+    mag = runner.inscription_sql("041_inscricao_magento.sql", cached=True)
+    rec = runner.inscription_sql("050_reconciliacao_pedidos.sql", cached=True)
+    assert "pg_temp.core_v1_magento_inscricao_cache" in base
+    assert "pg_temp.core_v1_magento_bundle_componente_cache" in mag
+    assert "pg_temp.core_v1_magento_bundle_pai_cache" in mag
+    assert "pg_temp.core_v1_ativo_inscricao_pedido_cache" in rec
+    assert "staging.ativo_inscricao" in runner.inscription_sql(
+        "050_reconciliacao_pedidos.sql", cached=False)
 
 
 def test_indicator_gate_stays_closed():

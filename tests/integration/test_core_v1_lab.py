@@ -152,6 +152,63 @@ def test_idempotence_and_temporal_rederivation():
                    .fetchone()[0] is True
 
 
+def test_optimized_cache_matches_existing_derivation_and_is_temporary():
+    with psycopg.connect(
+        host=os.environ["CORE_PG_HOST"], port=os.environ["CORE_PG_PORT"],
+        dbname=os.environ["CORE_PG_DATABASE"], user=os.environ["CORE_PG_USER"],
+        password=os.environ["CORE_PG_PASSWORD"], sslmode="disable",
+        autocommit=True,
+    ) as conn:
+        runner.validate_destination(conn, False)
+        before = conn.execute(
+            "SELECT origem,inscricao_id_origem,conteudo_hash,"
+            "dependencias_hash_snapshot,classificacao_comercial,"
+            "valor_liquido_inscricao,contabiliza_inscricao "
+            "FROM core.fato_inscricao ORDER BY origem,inscricao_id_origem"
+        ).fetchall()
+        runner.prepare_inscription_cache(conn)
+        assert runner.source_range_has_rows(conn, 4000, 5999)
+        assert not runner.source_range_has_rows(conn, 8000, 8999)
+        runner.run_range(conn, "inscriptions", 0, 10000,
+                         date(2026, 10, 22), cached=True)
+        after = conn.execute(
+            "SELECT origem,inscricao_id_origem,conteudo_hash,"
+            "dependencias_hash_snapshot,classificacao_comercial,"
+            "valor_liquido_inscricao,contabiliza_inscricao "
+            "FROM core.fato_inscricao ORDER BY origem,inscricao_id_origem"
+        ).fetchall()
+        assert after == before
+    with psycopg.connect(
+        host=os.environ["CORE_PG_HOST"], port=os.environ["CORE_PG_PORT"],
+        dbname=os.environ["CORE_PG_DATABASE"], user=os.environ["CORE_PG_USER"],
+        password=os.environ["CORE_PG_PASSWORD"], sslmode="disable",
+    ) as other:
+        assert other.execute(
+            "SELECT to_regclass('pg_temp.core_v1_magento_inscricao_cache')"
+        ).fetchone()[0] is None
+        assert other.execute(
+            "SELECT count(*) FROM core.fato_inscricao_indicadores_validos"
+        ).fetchone()[0] == 0
+
+
+def test_bulk_reuses_one_cache_across_multiple_nonempty_ranges():
+    with psycopg.connect(
+        host=os.environ["CORE_PG_HOST"], port=os.environ["CORE_PG_PORT"],
+        dbname=os.environ["CORE_PG_DATABASE"], user=os.environ["CORE_PG_USER"],
+        password=os.environ["CORE_PG_PASSWORD"], sslmode="disable",
+        autocommit=True,
+    ) as conn:
+        runner.validate_destination(conn, False)
+        before = conn.execute("SELECT count(*) FROM core.fato_inscricao").fetchone()[0]
+        batches, _ = runner.run_bulk_inscriptions(
+            conn, 0, 10000, 1000, date(2026, 10, 22))
+        assert batches >= 2  # Magento 4000s e Ativo 5000s
+        assert conn.execute("SELECT count(*) FROM core.fato_inscricao")\
+                   .fetchone()[0] == before
+        assert conn.execute("SELECT count(*) FROM core.fato_inscricao_indicadores_validos")\
+                   .fetchone()[0] == 0
+
+
 def test_source_protocols_and_no_person_unification(db):
     assert one(db, "SELECT protocolo FROM core.fato_pedido "
                "WHERE origem='ativo' AND pedido_id_origem=3001")[0] == "3001"
