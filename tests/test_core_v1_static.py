@@ -100,6 +100,14 @@ def test_abandoned_transaction_has_session_timeout():
         runner.connect)
 
 
+def test_ativo_only_cache_requires_range_above_magento_max():
+    import inspect
+    body = inspect.getsource(runner.prepare_inscription_cache)
+    assert "SELECT max(item_id) FROM raw.magento_sales_order_item" in body
+    assert "magento_low <= max_item" in body
+    assert 'name.startswith("core_v1_magento_")' in body
+
+
 def test_zero_id_migration_is_core_only_and_versioned():
     path = SQL / "007_core_alerta_zero_id.sql"
     body = path.read_text(encoding="utf-8")

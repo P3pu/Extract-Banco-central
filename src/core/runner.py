@@ -249,13 +249,22 @@ def validate_range(low: int, high: int) -> None:
         raise ValueError("Faixa inválida: até 100000 IDs inclusivos")
 
 
-def prepare_inscription_cache(conn: psycopg.Connection) -> None:
+def prepare_inscription_cache(conn: psycopg.Connection,
+                              magento_low: int | None = None) -> None:
     """Materializa uma só vez as projeções caras, sem estruturas permanentes."""
     if conn.execute("SELECT to_regclass('pg_temp.core_v1_magento_inscricao_cache')")\
             .fetchone()[0] is not None:
         raise RuntimeError("Cache de sessão já existe; abrir conexão nova")
+    if magento_low is not None:
+        max_item = conn.execute(
+            "SELECT max(item_id) FROM raw.magento_sales_order_item"
+        ).fetchone()[0]
+        if max_item is not None and magento_low <= max_item:
+            raise RuntimeError("Faixa ainda pode conter Magento; cache completo obrigatório")
     for name, query, indexes in INSCRIPTION_CACHE:
         print(f"CORE_V1_CACHE_START {name}", flush=True)
+        if magento_low is not None and name.startswith("core_v1_magento_"):
+            query = f"SELECT * FROM ({query}) AS fonte WHERE false"
         with conn.transaction():
             conn.execute(f"CREATE TEMP TABLE {name} ON COMMIT PRESERVE ROWS AS {query}")
             for column in indexes:

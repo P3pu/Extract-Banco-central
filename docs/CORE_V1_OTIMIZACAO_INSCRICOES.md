@@ -83,6 +83,13 @@ somente em sua sessão, para limitar retenção de locks caso a conexão caia.
 Ao retomar após uma queda, conferir sessão/lock, auditoria e contagens do
 lote; nunca presumir confirmação pelo último ID impresso.
 
+Depois do maior `raw.magento_sales_order_item.item_id`, o modo Ativo-only
+materializa caches Magento vazios, evitando leitura e espaço temporário
+desnecessários. O executor exige `magento_low` estritamente maior que o
+máximo da RAW antes de ativar esse modo. O contrato foi testado no Docker
+com rejeição da fronteira insegura e carga sintética idempotente Ativo-only;
+a execução padrão com caches completos permanece inalterada.
+
 ## Segurança operacional
 
 - Destino `Atendimento` continua exigindo `--approve-production` e
