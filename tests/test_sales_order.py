@@ -131,7 +131,7 @@ def test_no_incremental_rows_preserves_watermark():
     old = datetime(2026, 9, 28)
     reader.sales_order_bounds.return_value = (None, 999, old)
     reader.sales_order_page.return_value = ()
-    with patch.object(pipeline.loader, "prepare"):
+    with patch.object(pipeline.loader, "validate_target"), patch.object(pipeline.loader, "prepare"):
         result = pipeline.load(conn, reader, "INCREMENTAL", 10, UUID(int=1), old,
                                {"rows_extracted": 0, "rows_loaded": 0})
     assert result == old

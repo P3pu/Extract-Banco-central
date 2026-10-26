@@ -1,3 +1,6 @@
+-- MIGRAÇÃO SEPARADA: nunca executar por INCREMENTAL ou RECONCILIATION.
+-- Aplicar somente em janela aprovada, após diagnóstico de schema e backup.
+-- A lógica FULL legada permanece inalterada nesta revisão D4.1.
 -- Migra a primeira versão da RAW sem descartar a tabela ou os registros.
 -- CHAR(1) do PostgreSQL armazena '' como espaço; o cast para TEXT restaura ''
 -- porque remove o preenchimento à direita de CHAR(n).

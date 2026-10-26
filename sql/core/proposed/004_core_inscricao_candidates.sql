@@ -1,7 +1,7 @@
 -- PROPOSTA FASE B v1: SELECTs DE TRANSFORMAÇÃO, SOMENTE LEITURA.
 -- NÃO EXECUTAR nesta fase; as fontes auxiliares ainda não foram integradas.
 -- NÃO PROMOVER A UPSERT SEM APROVAR DEPENDÊNCIAS E TESTAR EM HOMOLOGAÇÃO.
--- :id_min / :id_max delimitam pedido_id para incluir todos os bundles do pedido.
+-- core.id_min/core.id_max delimitam pedido_id para incluir todos os bundles do pedido.
 -- Esta escolha impede conciliar um pedido com apenas parte das inscrições.
 
 -- Magento: pré-agrega filhos por pai, depois agrega a soma identificada por
@@ -11,7 +11,7 @@ WITH pais AS MATERIALIZED (
            item.quantidade_reembolsada, item.desconto AS desconto_pai
     FROM staging.magento_inscricao i
     JOIN staging.magento_item_pedido item ON item.item_id = i.inscricao_id
-    WHERE i.pedido_id BETWEEN :id_min AND :id_max
+    WHERE i.pedido_id BETWEEN core.batch_min() AND core.batch_max()
 ), filhos AS (
     SELECT p.inscricao_id,
            COUNT(c.componente_item_id) AS qtd_filhos,
@@ -21,6 +21,14 @@ WITH pais AS MATERIALIZED (
     LEFT JOIN staging.magento_bundle_componente c
       ON c.inscricao_item_id = p.inscricao_id
     GROUP BY p.inscricao_id
+), regras AS (
+    SELECT ids.pedido_id,
+           COALESCE(BOOL_OR(r.etiqueta ILIKE '%grupos%'), FALSE) AS etiqueta_grupos,
+           COALESCE(BOOL_OR(r.etiqueta ~* '(cortesia|corttesia|corteisa)'), FALSE)
+               AS etiqueta_cortesia
+    FROM (SELECT DISTINCT pedido_id FROM pais) ids
+    LEFT JOIN staging.magento_pedido_regra r ON r.pedido_id = ids.pedido_id
+    GROUP BY ids.pedido_id
 ), base AS (
     SELECT p.*, f.qtd_filhos, f.qtd_descontos_preenchidos,
            f.desconto_filhos,
@@ -74,6 +82,13 @@ SELECT b.pedido_id, b.inscricao_id, b.pedido_key, b.evento_id,
        b.flag_evento_teste,
        b.evento_key IS NULL AS evento_nao_mapeado,
        b.status_corporativo,
+       core.classificacao_magento(r.etiqueta_grupos,r.etiqueta_cortesia,
+                                  b.cupom,b.valor_bruto) AS classificacao_candidata,
+       CASE WHEN r.etiqueta_grupos THEN 'ETIQUETA_GRUPOS'
+            WHEN b.cupom ~* '^GR' THEN 'CUPOM_GR'
+            WHEN r.etiqueta_cortesia THEN 'ETIQUETA_CORTESIA'
+            WHEN b.valor_bruto = 0 THEN 'BRUTO_ZERO'
+            ELSE 'SEM_SINAL_ESPECIAL' END AS motivo_classificacao,
        CASE WHEN b.quantidade_pedida > 0
                  AND b.quantidade_cancelada >= b.quantidade_pedida THEN TRUE
             WHEN b.quantidade_pedida = 1
@@ -88,14 +103,15 @@ SELECT b.pedido_id, b.inscricao_id, b.pedido_key, b.evento_id,
             WHEN b.pagamento_confirmado IS TRUE THEN TRUE
             ELSE FALSE END AS pagamento_confirmado_inscricao,
        CASE WHEN b.status_corporativo IN ('NOVO','PENDENTE')
-                 AND b.data_evento::DATE < CURRENT_DATE
+                 AND b.data_evento::DATE < (now() AT TIME ZONE 'America/Sao_Paulo')::DATE
                  AND b.flag_evento_teste IS FALSE
                  AND b.quantidade_pedida = 1
                  AND COALESCE(b.quantidade_cancelada,0) = 0
                  AND COALESCE(b.quantidade_reembolsada,0) = 0
             THEN TRUE ELSE FALSE END AS pagamento_presumido_candidato
 FROM base b
-JOIN conciliacao c ON c.pedido_id = b.pedido_id;
+JOIN conciliacao c ON c.pedido_id = b.pedido_id
+JOIN regras r ON r.pedido_id = b.pedido_id;
 
 -- PENDÊNCIAS Magento antes do UPSERT:
 -- 1) descontos de itens raiz não-bundle e linhas sem desconto informado;
@@ -123,15 +139,24 @@ SELECT i.pedido_id, i.inscricao_id, fp.pedido_key,
        i.taxa AS taxa_servico_ativo,
        i.categoria, i.modalidade, i.tamanho_camiseta,
        cupom.codigo_cupom, cab.classificacao AS classificacao_cupom,
-       CASE WHEN cab.classificacao ILIKE '%grupos%'
-                 OR i.categoria ILIKE '%grupo%'
-                 OR i.categoria ILIKE '%saúde corporativa%'
-                 OR cupom.codigo_cupom ~* '^GR' THEN 'Grupos'
+       core.classificacao_ativo(cab.classificacao,i.categoria,
+                                cupom.codigo_cupom,i.preco,
+                                i.cupom_individual_id IS NOT NULL,
+                                cab.cupom_desconto_id IS NOT NULL)
+           AS classificacao_candidata,
+       CASE WHEN core.cupom_ativo_e_grupos(cab.classificacao)
+                 THEN 'CUPOM_CLASSIFICACAO_GRUPOS'
+            WHEN i.categoria ILIKE '%grupo%'
+              OR i.categoria ILIKE '%saúde corporativa%'
+              OR i.categoria ILIKE '%saude corporativa%' THEN 'CATEGORIA_GRUPOS'
+            WHEN cupom.codigo_cupom ~* '^GR' THEN 'CUPOM_GR'
+            WHEN i.cupom_individual_id IS NOT NULL
+                 AND (cupom.cupom_id IS NULL OR cab.cupom_desconto_id IS NULL)
+                 THEN 'CUPOM_HEADER_AUSENTE'
             WHEN i.categoria ILIKE '%cortesia%'
-                 OR i.categoria ILIKE '%patrocinador%'
-                 OR i.preco = 0 THEN 'Cortesia'
-            WHEN cab.cupom_desconto_id IS NOT NULL THEN 'Site'
-            ELSE NULL END AS classificacao_candidata,
+              OR i.categoria ILIKE '%patrocinador%' THEN 'CATEGORIA_CORTESIA'
+            WHEN i.preco = 0 THEN 'BRUTO_ZERO'
+            ELSE 'SEM_SINAL_ESPECIAL' END AS motivo_classificacao,
        fp.status_corporativo,
        CASE WHEN fp.status_corporativo = 'CANCELADO'
                  OR i.status_detalhado_id IN (5,6,7,8) THEN FALSE
@@ -150,7 +175,8 @@ SELECT i.pedido_id, i.inscricao_id, fp.pedido_key,
             ELSE FALSE END AS pagamento_confirmado_inscricao,
        CASE WHEN i.status_detalhado_id = 0
                  AND fp.status_corporativo IN ('PENDENTE','NOVO')
-                 AND core.try_date(i.data_evento) < CURRENT_DATE
+                 AND core.try_date(i.data_evento)
+                     < (now() AT TIME ZONE 'America/Sao_Paulo')::DATE
                  AND de.flag_evento_teste IS FALSE
                  AND i.pedido_mapeado THEN TRUE
             ELSE FALSE END AS pagamento_presumido_candidato,
@@ -174,7 +200,7 @@ LEFT JOIN staging.ativo_cupom_desconto cab
   ON cab.cupom_desconto_id = cupom.cupom_desconto_id
 LEFT JOIN staging.ativo_status_detalhado sd
   ON sd.status_detalhado_id = i.status_detalhado_id
-WHERE i.pedido_id BETWEEN :id_min AND :id_max;
+WHERE i.pedido_id BETWEEN core.batch_min() AND core.batch_max();
 
 -- O INSERT ... ON CONFLICT de fato_inscricao fica retido nesta versão. Ainda
 -- falta resolver os gates acima e demonstrar que os SELECTs resultam exatamente

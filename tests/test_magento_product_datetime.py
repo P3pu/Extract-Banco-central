@@ -66,12 +66,12 @@ def test_incremental_uses_old_id_and_preserves_watermark_if_empty():
     conn, reader = MagicMock(), MagicMock()
     reader.product_datetime_bounds.return_value = (None, 100)
     reader.product_datetime_page.return_value = []
-    with patch.object(pipeline.loader, "prepare"):
+    with patch.object(pipeline.loader, "validate_target"), patch.object(pipeline.loader, "prepare"):
         newest = pipeline.load(conn, reader, "INCREMENTAL", 10, UUID(int=1), 90,
                                {"rows_extracted": 0, "rows_loaded": 0})
     assert newest == 90
     assert reader.product_datetime_page.call_args.kwargs["cursor"] == 90
-    assert conn.execute.call_count == 1
+    assert conn.execute.call_count == 0
 
 
 @pytest.mark.parametrize("failure", [False, True])

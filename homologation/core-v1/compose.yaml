@@ -1,0 +1,29 @@
+name: banco-central-core-v1
+
+services:
+  db:
+    image: postgres:16.13-trixie
+    profiles: [manual]
+    restart: "no"
+    environment:
+      POSTGRES_DB: core_v1_homolog
+      POSTGRES_USER: core_v1
+      POSTGRES_PASSWORD: core_v1_synthetic_only
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "127.0.0.1:15439:5432"
+    volumes:
+      - core_v1_pgdata:/var/lib/postgresql/data
+      - ../../sql:/workspace/sql:ro
+      - ../core-c1/fixtures.sql:/workspace/c1-fixtures.sql:ro
+      - ./fixtures_extra.sql:/workspace/v1-fixtures-extra.sql:ro
+      - ./schema.sh:/workspace/schema.sh:ro
+    shm_size: 256mb
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U core_v1 -d core_v1_homolog"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  core_v1_pgdata:

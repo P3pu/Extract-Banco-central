@@ -5,14 +5,12 @@ from datetime import datetime, timezone
 from time import monotonic
 from uuid import uuid4
 
-from src.config.settings import ROOT
 from src.db import mysql, postgres
 from src.loaders import postgres_loader as loader
 from src.pipeline.text_sanitizer import replace_nul
 from src.sources.ativo import cupom
 
 LOCK_ID = 7248319320
-DDL = "023_create_ativo_cupom_desconto_item_raw.sql"
 TARGET = ("raw", "ativo_cupom_desconto_item")
 KEY = ("raw.ativo_cupom_desconto_item", "ativo", cupom.TABLE)
 
@@ -113,8 +111,8 @@ def run(settings, mode, batch_size=None):
                 database = settings.database("ativo").database
                 cupom.validate_schema(reader.columns(database, cupom.TABLE),
                                       reader.indexes(database, cupom.TABLE))
+                loader.validate_target(connection, TARGET, cupom)
                 _, upper_id = reader.snapshot_bounds(cupom, count_total=False)
-                connection.execute((ROOT / "sql/postgres" / DDL).read_text(encoding="utf-8"))
                 loader.prepare(connection, TARGET)
                 if mode == "RECONCILIATION":
                     load_references(connection, reader, batch_size, batch_id,

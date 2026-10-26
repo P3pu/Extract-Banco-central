@@ -25,12 +25,15 @@ def log(event, **fields):
 def load(connection, reader, mode, batch_size, batch_id, old_id, days, progress, entity="pedido"):
     contract, _, ddl = ENTITIES[entity]
     target = ("raw", f"ativo_{entity}")
+    if mode != "FULL":
+        loader.validate_target(connection, target, contract)
     count, upper_id = getattr(reader, f"ativo_{entity}_bounds")(count_total=mode == "FULL")
     cutoff = reader.ativo_pedido_cutoff(days) if mode == "RECONCILIATION" else None
-    connection.execute((ROOT / "sql/postgres" / ddl).read_text(encoding="utf-8"))
-    if entity == "pedido_evento":
-        connection.execute((ROOT / "sql/postgres/005b_migrate_ativo_pedido_evento_fl_amigo.sql")
-                           .read_text(encoding="utf-8"))
+    if mode == "FULL":
+        connection.execute((ROOT / "sql/postgres" / ddl).read_text(encoding="utf-8"))
+        if entity == "pedido_evento":
+            connection.execute((ROOT / "sql/postgres/005b_migrate_ativo_pedido_evento_fl_amigo.sql")
+                               .read_text(encoding="utf-8"))
     loader.prepare(connection, target)
     cursor = None
     newest = old_id

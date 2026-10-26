@@ -22,7 +22,11 @@ não prova de disponibilidade na STAGING. Divergências da Fase A prevalecem.
 O DDL proposto é `sql/core/proposed/001_core_ddl.sql`; conversões defensivas
 estão em `002_core_helpers.sql`. `003_core_upserts.sql` prepara dimensões,
 combos e pedidos por lote. `005_core_inscricao_base_upsert.sql` preserva o grão
-de inscrição com atributos seguros e métricas derivadas NULL. As fórmulas
+de inscrição com atributos seguros. Na primeira inserção os derivados ficam
+NULL; no UPSERT, valores derivados anteriores não são apagados. Se a base
+mudar, a derivação é marcada `PENDENTE`. **A view de indicadores permanece
+fechada (zero linhas) nesta versão**: o hash básico não prova atualidade de
+fontes financeiras, status, cupom, cadastros ou regras. As fórmulas
 individuais de `004_core_inscricao_candidates.sql` são consultas de revisão,
 **não** um UPSERT final. Isso é deliberado: sem os gates abaixo, materializar
 valores finais atribuiria descontos/status indevidamente. `NUMERIC(20,4)` é usado para dinheiro,
@@ -38,7 +42,7 @@ porque há 96.214 inscrições órfãs Ativo no diagnóstico.
    `raw.ativo_cupom_desconto_item`, pelo menos `id_cupom_desconto` e
    `en_cupom_classificacao`. Criar RAW e view 1:1 de cabeçalho; não derivar
    Grupos de outros valores do enum. Até lá, Grupos por categoria/código é
-   apenas classificação **parcial**; sinalizar `CLASSIFICACAO_CUPOM_AUSENTE`.
+   apenas classificação **parcial**; sinalizar `CUPOM_HEADER_AUSENTE`.
 2. `sa_status_detalhado`: snapshot de 17 linhas com `id_status_detalhado`,
    `id_pedido_status`, `status`, `tipo`, `ativo`. Não aplicar descrições com
    `tipo='pedido'` à inscrição sem regra validada. Código 17 permanece
@@ -46,7 +50,10 @@ porque há 96.214 inscrições órfãs Ativo no diagnóstico.
 3. `sa_pedido.id_usuario`: ampliar contrato/fonte RAW/STAGING do pedido Ativo
    e executar backfill reconciliado somente em fase aprovada. Não copiar
    `inscricao.usuario_id` para `comprador_key`; 445/4.015 inscrições da amostra
-   tinham usuário distinto do pedido. Magento `magento_pedido.cliente_id` é
+   tinham usuário distinto do pedido. Até essa dependência existir,
+   novos `fato_pedido.comprador_id_origem` do Ativo permanecem NULL; o UPSERT
+   não apaga eventual comprador validado por backfill separado. Magento
+   `magento_pedido.cliente_id` é
    candidato a comprador; não a participante.
 4. Combo: ampliar `sa_combo.nr_qntprovas` e extrair
    `sa_combo_evento_categoria` com contrato de PK/colunas a confirmar.
@@ -55,7 +62,9 @@ porque há 96.214 inscrições órfãs Ativo no diagnóstico.
 5. CPF: aprovar validação de dígitos, HMAC-SHA256 com segredo externo,
    acesso restrito e evidência de papéis. Não preencher `dim_pessoa`/maps na
    carga base enquanto a política faltar. `magento_item_cliente` ambíguo não
-   define participante. Nenhum CPF bruto vai à CORE ou logs.
+   define participante. Nenhum CPF bruto vai à CORE ou logs. O DDL limita o
+   token a 32 bytes e IDs de pessoa/alerta a PK numérica, mas isso não
+   substitui política de acesso nem validação do HMAC.
 6. Categoria Magento: `categoria_origem` é ID de `attribute_set_id`, não
    categoria textual. Persistir ID como texto de origem; nome NULL até fonte
    textual validada. `campanha_salesforce_id` Ativo não é SKU Magento por
@@ -95,12 +104,17 @@ extração antes de adicionar as novas entidades ao CLI.
   5–8 excluem; 0 e 9–13 são candidatos aceitos quando tipo/semântica confirmados;
   1, 14, 15, 17 e pendências 2–4 ficam indeterminados. Até resolver lookup,
   somente 0 pode ser aceito automaticamente, com essa restrição documentada.
-- Magento `canceled` em `state` ou `status` exclui. Pares contraditórios
-  (`new/approved`, `processing/canceled`) geram alerta; os não cancelados
-  contraditórios ficam indeterminados. Pares estáveis `processing/approved/
-  complete` confirmam. `new`/`pending` sem conflito não confirmam.
+- Magento `canceled` em qualquer lado prevalece e exclui. Pagamento só é
+  confirmado quando **state e status** pertencem ambos à família
+  `processing/approved/complete`. `new/new` é Novo;
+  `new/pending`, `pending/new` e `pending/pending` são Pendente. Demais pares,
+  inclusive `new/approved`, `processing/new`, `closed/complete` ou lado
+  ausente, ficam indeterminados. `processing/canceled` e
+  `canceled/approved` são cancelados com alerta de conflito. Não usar OR
+  simples para sinal de pagamento.
 - Regra de evento ocorrido: apenas inscrição pendente, não cancelada/não teste,
-  sem status especial nem reembolso, com data válida `< CURRENT_DATE`, recebe
+  sem status especial nem reembolso, com data válida anterior ao dia corrente
+  em `America/Sao_Paulo`, recebe
   `pagamento_presumido`; não altera status original nem promove o pedido todo.
   Recalcular em cada execução mesmo sem atualização RAW. Confirmado e presumido
   são colunas separadas. Mês financeiro = mês do pedido, não mês de caixa.
@@ -118,7 +132,7 @@ extração antes de adicionar as novas entidades ao CLI.
 | FIN-01/02/04, T04–T07, T18 | header 1x, pais/filhos pré-agregados, diferença não atribuída | Query de aceite preparada; carga pendente |
 | FIN-05/06, T08/09 | parser defensivo, status e taxa individual Ativo | status lookup e cobertura ainda pendentes |
 | FIN-07/08/09, T10/11 | flags de bruto/confirmado/presumido por inscrição | validar subset e calendário; MART fora do escopo |
-| CLS-01–05 | Grupos > Cortesia > Site; cupom, categoria, etiqueta | Grupos Ativo incompleto sem cabeçalho cupom |
+| CLS-01–05 | Grupos > Cortesia > Site; cupom, categoria, etiqueta; cupom Ativo sem cabeçalho deixa resultado NULL salvo sinal positivo de Grupos | Grupos Ativo incompleto sem cabeçalho cupom |
 | ID-02/03/04, T13/15 | maps, token HMAC, categoria-ID preservada | HMAC/papéis bloqueados; evento sem união automática |
 | COM-01/02 | `dim_combo` Ativo ID/nome, previsão NULL | composição e ticket combo bloqueados |
 | BI-01, ETL-01–03, T16/19/20 | período pedido, lotes, revisão histórica e testes read-only | orquestração/agendamento não implementados |
@@ -140,6 +154,46 @@ performance e reconciliação histórica antes de rotina 3x/dia.
 órfãos, categoria-ID Magento, comprador/participante NULL, datas/valores Ativo
 inválidos com alerta, ausência de data de caixa, SKU repetido. Esses registros
 devem ser preservados; não entram automaticamente em indicadores não apuráveis.
+
+## Separação entre base, derivação e acesso
+
+O UPSERT básico atualiza apenas atributos de origem e o hash desses atributos.
+Nunca coloca NULL/TRUE em colunas derivadas no conflito. Uma alteração básica
+marca `estado_derivacao='PENDENTE'` e conserva os valores derivados anteriores
+para auditoria. Isso **não** detecta alterações exclusivamente nas dependências
+externas: `state/status`, quantidades canceladas/reembolsadas, descontos de
+filhos/pais/cabeçalho, classificação/código de cupom, categoria/valor de kit,
+cadastros e regras auxiliares. Portanto, a view
+`core.fato_inscricao_indicadores_validos` tem gate `WHERE FALSE` e publica
+**zero linhas** nesta Fase B1, mesmo se alguma linha estiver `VALIDADO`. Não
+somar derivados diretamente da tabela base.
+
+Para abrir a publicação numa **migração futura e separada**, o executor deverá:
+(1) definir uma versão imutável das regras; (2) calcular fingerprint canônico
+por inscrição de todas as dependências acima, incluindo PKs, valores, NULLs,
+conjunto ordenado de filhos/regras, exclusões e versão de regra; (3) registrar
+snapshot completo e watermark de cada fonte; (4) invalidar `PENDENTE` as
+inscrições afetadas por INSERT/UPDATE/DELETE, inclusive alterações em pedido,
+cupom, categoria, combo, evento, mapeamentos e auxiliares, antes de liberar o
+snapshot aos consumidores; (5) recalcular e marcar `VALIDADO` na mesma
+transação/geração somente quando hash básico, fingerprint de dependências e
+versão corresponderem ao snapshot certificado. Se uma fonte ou reconciliação
+falhar, manter o gate fechado. Alteração de versão de regra invalida todas as
+inscrições afetadas. O dia do evento em `America/Sao_Paulo` também exige
+invalidação/reavaliação diária, mesmo sem mudança na RAW. As colunas
+`dependencias_hash_snapshot`, `derivado_de_dependencias_hash` e
+`versao_regras_derivacao` no DDL reservam esse contrato, mas **não** calculam
+nem certificam hashes nesta fase. O gate não pode ser removido apenas por
+preencher essas colunas.
+
+Os limites de lote usam `core.batch_min()`/`core.batch_max()`, configurados na
+mesma sessão pgAdmin. O helper rejeita intervalo ausente, invertido ou acima
+de 100 mil IDs **inclusivos** (`id_max - id_min <= 99999`). Instruções exatas
+estão em `sql/core/proposed/README.md`.
+Alertas aceitam apenas PK de origem numérica e códigos controlados, sem
+mensagem livre; o log de execução aceita apenas código de erro. A dimensão
+de pessoa e seus mapas não recebem grants de BI. Política HMAC e permissões
+detalhadas continuam pendentes de aprovação.
 
 ## Ordem de implantação futura e reversão
 

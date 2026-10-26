@@ -28,8 +28,11 @@ def load(connection, reader, mode, batch_size, batch_id, old, progress, entity="
     contract, _, ddl = ENTITIES[entity]
     source_table = getattr(contract, "TABLE", entity)
     target = ("raw", f"magento_{entity}")
+    if mode != "FULL":
+        loader.validate_target(connection, target, contract)
     count, upper_id, upper_time = getattr(reader, f"{entity}_bounds")(count_total=mode == "FULL")
-    connection.execute((ROOT / "sql/postgres" / ddl).read_text(encoding="utf-8"))
+    if mode == "FULL":
+        connection.execute((ROOT / "sql/postgres" / ddl).read_text(encoding="utf-8"))
     loader.prepare(connection, target)
     newest = old
     cursor = None

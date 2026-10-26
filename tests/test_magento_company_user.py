@@ -65,7 +65,7 @@ def test_incremental_uses_old_pk_and_keeps_watermark_when_empty():
     conn, reader = MagicMock(), MagicMock()
     reader.company_user_bounds.return_value = (None, 100)
     reader.company_user_page.return_value = []
-    with patch.object(pipeline.loader, "prepare"):
+    with patch.object(pipeline.loader, "validate_target"), patch.object(pipeline.loader, "prepare"):
         newest = pipeline.load(conn, reader, "INCREMENTAL", 10, UUID(int=1), 90,
                                {"rows_extracted": 0, "rows_loaded": 0})
     assert newest == 90

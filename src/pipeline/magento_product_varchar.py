@@ -28,7 +28,10 @@ def log(event, **fields):
 def load(connection, reader, mode, batch_size, batch_id, old_id, progress):
     source_count, upper_id = reader.product_varchar_bounds(
         count_total=mode in {"FULL", "SNAPSHOT"})
-    connection.execute((ROOT / "sql/postgres" / DDL).read_text(encoding="utf-8"))
+    if mode == "INCREMENTAL":
+        loader.validate_target(connection, TARGET, product_varchar)
+    else:
+        connection.execute((ROOT / "sql/postgres" / DDL).read_text(encoding="utf-8"))
     loader.prepare(connection, TARGET)
     cursor = old_id if mode == "INCREMENTAL" else None
     newest = old_id if mode == "INCREMENTAL" else None

@@ -1,0 +1,3 @@
+-- Laboratorio novo: somente o contrato RAW versionado da tabela alvo.
+CREATE SCHEMA raw;
+\i /workspace/contract.sql

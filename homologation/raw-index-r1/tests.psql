@@ -1,0 +1,54 @@
+-- Executar uma vez em laboratorio novo, APOS schema, seed e index.
+BEGIN;
+DO $$
+BEGIN
+    IF (SELECT COUNT(*) FROM raw.magento_sales_order_item
+        WHERE order_id=800000001) <> 2 THEN
+        RAISE EXCEPTION 'Busca inicial por order_id falhou';
+    END IF;
+    IF (SELECT COUNT(*) FROM raw.magento_sales_order_item
+        WHERE order_id=800000002) <> 1 THEN
+        RAISE EXCEPTION 'Segundo order_id nao encontrado';
+    END IF;
+END $$;
+
+INSERT INTO raw.magento_sales_order_item
+    (item_id, order_id, price, base_price, row_total, base_row_total,
+     qty_ordered, created_at, updated_at, _source, _extracted_at, _batch_id)
+VALUES
+    (900000004, 800000001, 25.0000, 25.0000, 25.0000, 25.0000,
+     1.0000, TIMESTAMP '2020-01-02', TIMESTAMP '2020-01-02',
+     'synthetic-r1', TIMESTAMPTZ '2020-01-02 00:00:00+00',
+     '22222222-2222-4222-8222-222222222222');
+
+UPDATE raw.magento_sales_order_item
+SET order_id=800000003, updated_at=TIMESTAMP '2020-01-02'
+WHERE item_id=900000003;
+
+DO $$
+BEGIN
+    IF (SELECT COUNT(*) FROM raw.magento_sales_order_item
+        WHERE order_id=800000001) <> 3 THEN
+        RAISE EXCEPTION 'Insercao posterior ao indice nao encontrada';
+    END IF;
+    IF (SELECT COUNT(*) FROM raw.magento_sales_order_item
+        WHERE order_id=800000002) <> 0
+       OR (SELECT COUNT(*) FROM raw.magento_sales_order_item
+           WHERE order_id=800000003) <> 1 THEN
+        RAISE EXCEPTION 'Atualizacao posterior ao indice nao refletida';
+    END IF;
+    IF (SELECT COUNT(*) FROM pg_index x
+        JOIN pg_class i ON i.oid=x.indexrelid
+        WHERE x.indrelid='raw.magento_sales_order_item'::regclass
+          AND i.relname='idx_magento_sales_order_item_order_id'
+          AND x.indisvalid AND x.indisready) <> 1 THEN
+        RAISE EXCEPTION 'Indice invalido apos escrita sintetica';
+    END IF;
+END $$;
+COMMIT;
+
+-- Apenas mostra o plano; tabela pequena nao comprova ganho de desempenho.
+EXPLAIN (FORMAT TEXT, COSTS TRUE)
+SELECT item_id FROM raw.magento_sales_order_item WHERE order_id=800000001;
+SELECT item_id, order_id FROM raw.magento_sales_order_item
+WHERE order_id IN (800000001,800000003) ORDER BY item_id;

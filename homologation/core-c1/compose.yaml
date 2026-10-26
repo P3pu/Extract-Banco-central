@@ -1,0 +1,27 @@
+name: banco-central-core-c15
+
+services:
+  db:
+    image: postgres:16.13-trixie
+    profiles: [manual]
+    restart: "no"
+    network_mode: none
+    environment:
+      POSTGRES_DB: core_c1_homolog
+      POSTGRES_USER: core_c1
+      # Seguro apenas porque não há rede nem porta publicada; uso descartável.
+      POSTGRES_HOST_AUTH_METHOD: trust
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - core_c1_pgdata:/var/lib/postgresql/data
+      - ../../sql:/workspace/sql:ro
+      - ./:/workspace/c1:ro
+    shm_size: 256mb
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h /var/run/postgresql -U core_c1 -d core_c1_homolog"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  core_c1_pgdata:
