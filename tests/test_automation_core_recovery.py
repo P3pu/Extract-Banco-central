@@ -8,7 +8,7 @@ from src.automation import core_recovery
 
 def test_recovery_runs_ativo_then_magento_with_production_gate(monkeypatch):
     calls = []
-    aux = Mock(return_value=33)
+    aux = Mock(return_value=(33, set()))
     monkeypatch.setattr(core_recovery.local_raw_core, "run_aux", aux)
     monkeypatch.setattr(core_recovery.verified_bulk, "main",
                         lambda argv: calls.append(argv) or 0)
@@ -27,7 +27,7 @@ def test_recovery_runs_ativo_then_magento_with_production_gate(monkeypatch):
 
 
 def test_recovery_stops_on_failed_range(monkeypatch):
-    monkeypatch.setattr(core_recovery.local_raw_core, "run_aux", Mock(return_value=1))
+    monkeypatch.setattr(core_recovery.local_raw_core, "run_aux", Mock(return_value=(1, set())))
     monkeypatch.setattr(core_recovery.verified_bulk, "main", Mock(return_value=1))
     conn = Mock()
     conn.execute.return_value = Mock(fetchone=lambda: (5,))
@@ -43,3 +43,13 @@ def test_recovery_requires_automation_gate(monkeypatch, capsys):
     monkeypatch.delenv("BCD_AUTOMATION_ENABLE", raising=False)
     assert core_recovery.main([]) == 1
     assert "RECOVERY_FAILED RuntimeError" in capsys.readouterr().err
+
+
+def test_recovery_stops_when_registry_refresh_fails(monkeypatch):
+    monkeypatch.setattr(core_recovery.local_raw_core, "run_aux",
+                        Mock(return_value=(27, {"ativo"})))
+    bulk = Mock(return_value=0)
+    monkeypatch.setattr(core_recovery.verified_bulk, "main", bulk)
+    with pytest.raises(RuntimeError):
+        core_recovery.run(Mock(), lambda: None, Mock(), date(2026, 10, 28))
+    bulk.assert_not_called()

@@ -39,7 +39,9 @@ def stuck_count(conn):
 
 
 def run(settings, assert_control, conn, as_of):
-    steps = local_raw_core.run_aux(settings, AUX_RECONCILE_DAYS, assert_control)
+    steps, failed = local_raw_core.run_aux(settings, AUX_RECONCILE_DAYS, assert_control)
+    if failed:
+        raise RuntimeError("Carga RAW de cadastros falhou")
     print(f"RECOVERY_AUX_OK steps={steps}", flush=True)
     pg = settings.database("postgres")
     os.environ.update(CORE_PG_HOST=pg.host, CORE_PG_PORT=str(pg.port),

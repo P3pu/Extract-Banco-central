@@ -215,18 +215,31 @@ def due_reconciliations(conn):
     return due
 
 
+def source_failed(failed, origin, step, exc):
+    """Uma origem indisponível não impede as demais; o watermark dela não avança."""
+    failed.add(origin)
+    print(f"AUTOMATION_SOURCE_FAILED {origin} {step} {type(exc).__name__}",
+          file=sys.stderr, flush=True)
+
+
 def run_raw(settings, journal, due, assert_control=lambda: None):
+    """Retorna as origens que falharam; as etapas seguintes dela são puladas."""
     from src.pipeline import ativo_pedido, sales_order
-    for origin, entity in ENTITIES:
+    failed = set()
+    steps = [(origin, "INCREMENTAL", entity) for origin, entity in ENTITIES]
+    steps += [("ativo", "RECONCILIATION", entity) for entity in due]
+    for origin, mode, entity in steps:
         assert_control()
+        if origin in failed:
+            continue
         pipeline = ativo_pedido if origin == "ativo" else sales_order
-        pipeline.run(settings, "INCREMENTAL", batch_size=1000, entity=entity,
-                     on_rows=journal.record_rows)
-    for entity in due:
-        assert_control()
-        ativo_pedido.run(settings, "RECONCILIATION", batch_size=1000,
-                         days=RECONCILIATION_DAYS, entity=entity,
-                         on_rows=journal.record_rows)
+        kwargs = {"days": RECONCILIATION_DAYS} if mode == "RECONCILIATION" else {}
+        try:
+            pipeline.run(settings, mode, batch_size=1000, entity=entity,
+                         on_rows=journal.record_rows, **kwargs)
+        except Exception as exc:
+            source_failed(failed, origin, entity, exc)
+    return failed
 
 
 def aux_due(conn):
@@ -256,11 +269,15 @@ def run_aux(settings, reconcile_days=None, assert_control=lambda: None):
     if reconcile_days is not None:
         commands += [["reconcile", "--source", "ativo", "--entity", entity,
                       "--days", str(reconcile_days)] for entity in AUX_RECONCILE]
+    failed = set()
     for argv in commands:
         assert_control()
+        origin = argv[2]
+        if origin in failed:
+            continue
         if cli.main(argv) != 0:
-            raise RuntimeError("Carga RAW de cadastros falhou")
-    return len(commands)
+            source_failed(failed, origin, argv[-1], RuntimeError())
+    return len(commands), failed
 
 
 def run_core(settings, journal, assert_control=lambda: None):
@@ -318,6 +335,7 @@ def main(argv=None):
             raise RuntimeError("Automação de escrita desabilitada")
         settings = Settings.load()
         success_message = None
+        exit_code = 0
         with prevent_idle_sleep(), postgres_access(settings):
             settings = local_settings()
             if args.command == "lock-status":
@@ -418,20 +436,25 @@ def main(argv=None):
                         success_message = f"AUTOMATION_CORE_OK {result}"
                     else:
                         aux, aux_reconcile = aux_due(conn)
-                        aux_steps = run_aux(
+                        aux_steps, failed = run_aux(
                             settings,
                             RECONCILIATION_DAYS if aux_reconcile else None,
-                            assert_control) if aux else 0
+                            assert_control) if aux else (0, set())
                         due = due_reconciliations(conn)
-                        run_raw(settings, journal, due, assert_control)
+                        failed |= run_raw(settings, journal, due, assert_control)
+                        # A CORE processa o que as origens disponíveis carregaram.
                         result = run_core(settings, journal, assert_control)
-                        success_message = (f"AUTOMATION_CYCLE_OK aux_steps={aux_steps} "
+                        status = ("AUTOMATION_CYCLE_PARTIAL failed=" + ",".join(sorted(failed))
+                                  if failed else "AUTOMATION_CYCLE_OK")
+                        success_message = (f"{status} aux_steps={aux_steps} "
                                            f"due_reconciliation={len(due)} core={result}")
+                        if failed:
+                            exit_code = 2
                 finally:
                     journal.close()
         if success_message:
             print(success_message, flush=True)
-        return 0
+        return exit_code
     except Exception as exc:
         # Exceções de drivers podem conter SQL, senhas ou PII: só a classe.
         print(f"AUTOMATION_FAILED {type(exc).__name__}", file=sys.stderr)
