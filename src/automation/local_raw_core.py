@@ -66,8 +66,11 @@ def postgres_tunnel(settings):
     key = Path.home() / ".ssh" / "bcd_automation_ed25519"
     if key.is_symlink() or not key.is_file():
         raise RuntimeError("Chave SSH dedicada ausente")
-    host = os.environ.get("BCD_SSH_HOST") or settings.database("postgres").host
-    remote_port = settings.database("postgres").port
+    # `settings` já aponta ao loopback/LOCAL_PORT. O destino do -L deve vir
+    # da configuração original, antes da substituição feita por local_settings.
+    original_pg = Settings.load().database("postgres")
+    host = os.environ.get("BCD_SSH_HOST") or original_pg.host
+    remote_port = original_pg.port
     args = ["ssh", "-N", "-i", str(key), "-o", "BatchMode=yes",
             "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes",
             "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=15",

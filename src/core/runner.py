@@ -77,7 +77,8 @@ INSCRIPTION_CACHE = (
     ("core_v1_magento_inscricao_cache", """
         SELECT inscricao_id,pedido_id,evento_id,evento_sku,data_evento,
                sku_inscricao,modalidade,categoria_origem,tamanho,status_pedido,
-               valor_bruto,batch_id,desconto_item,cupom,estado_pedido
+               valor_bruto,batch_id,desconto_item,cupom,estado_pedido,
+               cliente_id,cliente_ambiguo
         FROM staging.magento_inscricao
     """, ("inscricao_id", "pedido_id")),
     ("core_v1_magento_bundle_componente_cache", """

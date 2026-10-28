@@ -5,6 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from src.core import runner
+from src.core.person_dimension import sync_changed
 
 
 SPAN = 100_000
@@ -106,6 +107,13 @@ def refresh(conn, pending, assert_control=lambda: None):
         assert_control()
         runner.run_range(conn, "inscriptions", low, high, as_of, cached=cached,
                          selected_ids=selected)
+    assert_control()
+    with conn.transaction():
+        contacts = sync_changed(conn, orders, inscriptions)
+    print("CORE_PERSON_CONTACTS "
+          f"installed={int(contacts['installed'])} "
+          f"enabled={int(contacts['enabled'])} count={contacts['contacts']}",
+          flush=True)
     assert_control()
     # A view deve permanecer fechada mesmo após todos os UPSERTs.
     if conn.execute(

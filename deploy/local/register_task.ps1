@@ -17,7 +17,8 @@ if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
     throw 'Tarefa existente: revisar antes de alterar'
 }
 
-$argument = '-NoProfile -NonInteractive -File "' + $runScript + '"'
+# Janela oculta: fechar o console visível encerra o ciclo com CTRL_C_EXIT.
+$argument = '-NoProfile -NonInteractive -WindowStyle Hidden -File "' + $runScript + '"'
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argument
 $trigger = New-ScheduledTaskTrigger -Once -At $nextHour `
     -RepetitionInterval (New-TimeSpan -Hours 1) `

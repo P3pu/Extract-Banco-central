@@ -73,3 +73,25 @@ def test_control_connection_heartbeats_and_releases_own_lock(monkeypatch):
     assert "SELECT 1" in sqls
     assert any("pg_advisory_unlock" in sql for sql in sqls)
     assert "idle_session_timeout=120000" in connect.call_args.kwargs["options"]
+
+
+def test_tunnel_forwards_to_original_postgres_port(monkeypatch, tmp_path):
+    key_dir = tmp_path / ".ssh"
+    key_dir.mkdir()
+    (key_dir / "bcd_automation_ed25519").write_text("synthetic", encoding="ascii")
+    monkeypatch.setattr(local_raw_core.Path, "home", lambda: tmp_path)
+    original = Mock()
+    original.database.return_value = Mock(host="db.example.invalid", port=59381)
+    monkeypatch.setattr(local_raw_core.Settings, "load", Mock(return_value=original))
+    process = Mock()
+    process.poll.return_value = None
+    popen = Mock(return_value=process)
+    monkeypatch.setattr(local_raw_core.subprocess, "Popen", popen)
+    monkeypatch.setattr(local_raw_core.socket, "create_connection",
+                        Mock(return_value=MagicMock()))
+
+    with local_raw_core.postgres_tunnel(Mock()):
+        args = popen.call_args.args[0]
+        assert args[args.index("-L") + 1] == "127.0.0.1:15943:127.0.0.1:59381"
+        assert args[-1] == "bcd_tunnel@db.example.invalid"
+    process.terminate.assert_called_once()

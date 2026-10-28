@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -38,7 +38,7 @@ def test_changed_order_reprocesses_existing_registrations_and_old_order():
 
 
 def test_core_refresh_runs_orders_before_inscriptions_and_keeps_gate(monkeypatch):
-    conn = Mock()
+    conn = MagicMock()
     conn.execute.side_effect = [Mock(fetchone=lambda: ("SELECT * FROM core.fato_inscricao WHERE false;",)),
                                 Mock(fetchone=lambda: (0,))]
     monkeypatch.setattr(core_refresh, "affected_ids", lambda _conn, _pending:
@@ -47,14 +47,18 @@ def test_core_refresh_runs_orders_before_inscriptions_and_keeps_gate(monkeypatch
     monkeypatch.setattr(core_refresh.runner, "run_range", lambda _conn, scope, low, high, _as_of,
                         cached=False, selected_ids=None:
                         calls.append((scope, low, high, selected_ids)))
+    contacts = Mock(return_value={"contacts": 1, "installed": True,
+                                  "enabled": True})
+    monkeypatch.setattr(core_refresh, "sync_changed", contacts)
     assert core_refresh.refresh(conn, [("ativo", "order", 8, 8)]) == {
         "orders": 1, "inscriptions": 1,
     }
     assert calls == [("orders", 0, 99999, None), ("inscriptions", 99, 99, [99])]
+    contacts.assert_called_once_with(conn, {"ativo": {8}}, {"ativo": {99}})
 
 
 def test_multi_range_inscriptions_use_one_session_cache(monkeypatch):
-    conn = Mock()
+    conn = MagicMock()
     conn.execute.side_effect = [Mock(fetchone=lambda: ("SELECT 1 WHERE false;",)),
                                 Mock(), Mock(), Mock(fetchone=lambda: (0,))]
     monkeypatch.setattr(core_refresh, "affected_ids", lambda _conn, _pending:
@@ -63,6 +67,8 @@ def test_multi_range_inscriptions_use_one_session_cache(monkeypatch):
     run = Mock()
     monkeypatch.setattr(core_refresh.runner, "prepare_inscription_cache", prepare)
     monkeypatch.setattr(core_refresh.runner, "run_range", run)
+    monkeypatch.setattr(core_refresh, "sync_changed", Mock(return_value={
+        "contacts": 0, "installed": False, "enabled": False}))
     result = core_refresh.refresh(conn, [("magento", "inscription", 1, 1)])
     assert result == {"orders": 0, "inscriptions": 2}
     prepare.assert_called_once_with(conn)
