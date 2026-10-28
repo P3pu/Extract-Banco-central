@@ -61,12 +61,20 @@ Windows. Nada de RAW, CORE, watermarks ou diário é apagado.
 
 ## Situação em 28/10/2026
 
-- Release `b2b553b` instalada; timer instalado e **desabilitado**.
-- PostgreSQL e Magento conectam a partir do servidor; `audit-core` e
-  `lock-status` funcionam em modo direto.
-- **Bloqueio:** o MySQL do Ativo (RDS na AWS, endpoint público) não aceita
-  conexões do IP `178.156.169.207` — falta a regra de entrada TCP 3306 no
-  Security Group do RDS.
+- Release `b2b553b` instalada. Virada concluída às 11:55: tarefa Windows
+  `BancoCentral-RAW-CORE-Hourly` desabilitada, primeiro ciclo manual no
+  servidor com `AUTOMATION_CYCLE_OK` e `bcd-raw-core.timer` habilitado.
+- O MySQL do Ativo (RDS na AWS) não aceita conexões do IP `178.156.169.207`.
+  Até a regra de entrada TCP 3306 sair no Security Group, o Ativo chega por
+  uma ponte temporária: a tarefa Windows `BancoCentral-Ativo-Tunnel`
+  (`deploy/local/run_ativo_tunnel.ps1`) publica o RDS em `127.0.0.1:13306`
+  do servidor; o servidor resolve o hostname do RDS para `127.0.0.1` em
+  `/etc/hosts`, mantendo a verificação TLS, e usa `ATIVO_MYSQL_PORT=13306`.
+  A chave `bcd_tunnel` só pode escutar em `127.0.0.1:13306`. Com o notebook
+  desligado, os ciclos falham na etapa Ativo e retomam pelos watermarks.
+- Quando a regra da AWS sair: `ATIVO_MYSQL_PORT=3306` em `/etc/bcd/app.env`,
+  remover a linha do RDS em `/etc/hosts`, remover `permitlisten` da chave
+  `bcd_tunnel` e apagar a tarefa `BancoCentral-Ativo-Tunnel`.
 - A chave HMAC de CPF não foi encontrada no notebook. O gate
   `CORE_PII_ENABLE_SYNC` continua fechado; antes de abri-lo, localizar a chave
   usada no backfill de 27/10 ou definir rotação, para não gerar tokens
