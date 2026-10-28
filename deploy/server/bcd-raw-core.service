@@ -1,0 +1,21 @@
+[Unit]
+Description=Banco Central de Dados - ciclo RAW -> CORE
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=bcd
+Group=bcd
+WorkingDirectory=/opt/extract-banco-central/app
+Environment=BCD_AUTOMATION_ENABLE=approved
+Environment=BCD_DIRECT_POSTGRES=1
+Environment=BCD_STATE_DIR=/var/lib/bcd
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/extract-banco-central/venv/bin/python -m src.automation.local_raw_core run-once
+TimeoutStartSec=4h
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/bcd

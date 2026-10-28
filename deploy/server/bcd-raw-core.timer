@@ -1,0 +1,10 @@
+[Unit]
+Description=Banco Central de Dados - ciclo RAW -> CORE de hora em hora
+
+[Timer]
+OnCalendar=*-*-* *:00:00
+Persistent=false
+Unit=bcd-raw-core.service
+
+[Install]
+WantedBy=timers.target

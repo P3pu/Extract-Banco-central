@@ -131,3 +131,25 @@ def test_run_aux_stops_on_failed_command(monkeypatch):
     settings.database.return_value = Mock(host="127.0.0.1", port=15943)
     with pytest.raises(RuntimeError):
         local_raw_core.run_aux(settings)
+
+
+def test_direct_mode_uses_server_loopback_without_tunnel(monkeypatch):
+    monkeypatch.setenv("BCD_DIRECT_POSTGRES", "1")
+    original = Mock()
+    original.env = {"POSTGRES_HOST": "127.0.0.1"}
+    original.database.return_value = Mock(port=59381)
+    load = Mock(side_effect=[original, "local"])
+    monkeypatch.setattr(local_raw_core.Settings, "load", load)
+    assert local_raw_core.local_settings() == "local"
+    env = load.call_args_list[1].args[0]
+    assert env["POSTGRES_HOST"] == "127.0.0.1" and env["POSTGRES_PORT"] == "59381"
+    popen = Mock()
+    monkeypatch.setattr(local_raw_core.subprocess, "Popen", popen)
+    with local_raw_core.postgres_access(Mock()):
+        pass
+    popen.assert_not_called()
+
+
+def test_state_dir_overrides_windows_journal_path(monkeypatch, tmp_path):
+    monkeypatch.setenv("BCD_STATE_DIR", str(tmp_path))
+    assert local_raw_core.journal_path() == tmp_path / "pending.sqlite"

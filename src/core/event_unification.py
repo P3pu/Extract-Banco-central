@@ -159,7 +159,7 @@ def main(argv=None):
             raise RuntimeError("apply/revert exigem --approve-production")
         decisions = load_decisions(args.file)
         with local_raw_core.prevent_idle_sleep(), \
-                local_raw_core.postgres_tunnel(Settings.load()):
+                local_raw_core.postgres_access(Settings.load()):
             settings = local_raw_core.local_settings()
             with local_raw_core.control_connection(settings) as (conn, _assert_control):
                 run(conn, args.command, decisions)

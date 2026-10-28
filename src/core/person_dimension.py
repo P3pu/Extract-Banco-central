@@ -157,6 +157,8 @@ def _valid_cpf(value):
 
 def _hmac_key():
     path = os.environ.get("CORE_PII_HMAC_KEY_FILE")
+    if not path and os.environ.get("BCD_STATE_DIR"):
+        path = str(Path(os.environ["BCD_STATE_DIR"]) / "core-person-hmac.key")
     if not path:
         base = os.environ.get("LOCALAPPDATA")
         if not base:
@@ -622,12 +624,12 @@ def main(argv=None) -> int:
         parser.error("migração/backfill requer aprovação operacional explícita")
 
     # Mesmo caminho de túnel dedicado da automação; nenhuma senha em argv/log.
-    from src.automation.local_raw_core import LOCK_ID, local_settings, postgres_tunnel
+    from src.automation.local_raw_core import LOCK_ID, local_settings, postgres_access
 
     try:
         settings = local_settings()
         pg = settings.database("postgres")
-        with postgres_tunnel(settings):
+        with postgres_access(settings):
             with psycopg.connect(
                 host=pg.host, port=pg.port, dbname=pg.database,
                 user=pg.user, password=pg.password, sslmode="disable",

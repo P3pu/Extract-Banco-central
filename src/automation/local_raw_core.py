@@ -71,7 +71,15 @@ def prevent_idle_sleep():
         windows_execution_state(ES_CONTINUOUS)
 
 
+def direct_postgres() -> bool:
+    """Servidor: o PostgreSQL está no próprio host; não há túnel SSH."""
+    return os.environ.get("BCD_DIRECT_POSTGRES") == "1"
+
+
 def journal_path() -> Path:
+    state = os.environ.get("BCD_STATE_DIR")
+    if state:
+        return Path(state) / "pending.sqlite"
     base = os.environ.get("LOCALAPPDATA")
     if not base:
         raise RuntimeError("LOCALAPPDATA ausente")
@@ -118,10 +126,21 @@ def postgres_tunnel(settings):
             process.wait(timeout=5)
 
 
+@contextmanager
+def postgres_access(settings):
+    if direct_postgres():
+        yield
+        return
+    with postgres_tunnel(settings):
+        yield
+
+
 def local_settings() -> Settings:
     original = Settings.load()
+    # Direto: loopback do servidor na porta publicada; senão, a ponta local do túnel.
+    port = original.database("postgres").port if direct_postgres() else LOCAL_PORT
     env = {**original.env, "POSTGRES_HOST": "127.0.0.1",
-           "POSTGRES_PORT": str(LOCAL_PORT), "POSTGRES_SSLMODE": "disable",
+           "POSTGRES_PORT": str(port), "POSTGRES_SSLMODE": "disable",
            "RECONCILIATION_DAYS": str(RECONCILIATION_DAYS)}
     return Settings.load(env)
 
@@ -299,7 +318,7 @@ def main(argv=None):
             raise RuntimeError("Automação de escrita desabilitada")
         settings = Settings.load()
         success_message = None
-        with prevent_idle_sleep(), postgres_tunnel(settings):
+        with prevent_idle_sleep(), postgres_access(settings):
             settings = local_settings()
             if args.command == "lock-status":
                 pg = settings.database("postgres")

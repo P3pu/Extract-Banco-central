@@ -73,7 +73,7 @@ def main(argv=None):
             raise RuntimeError("Automação de escrita desabilitada")
         as_of = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
         with local_raw_core.prevent_idle_sleep(), \
-                local_raw_core.postgres_tunnel(Settings.load()):
+                local_raw_core.postgres_access(Settings.load()):
             settings = local_raw_core.local_settings()
             # O ciclo horário dispara no mesmo minuto; aguarda o lock dele.
             deadline = time.monotonic() + LOCK_WAIT_SECONDS
