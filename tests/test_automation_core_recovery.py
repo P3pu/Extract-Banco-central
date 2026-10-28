@@ -1,0 +1,41 @@
+from datetime import date
+from unittest.mock import Mock
+
+import pytest
+
+from src.automation import core_recovery
+
+
+def test_recovery_runs_ativo_then_magento_with_production_gate(monkeypatch):
+    calls = []
+    monkeypatch.setattr(core_recovery.verified_bulk, "main",
+                        lambda argv: calls.append(argv) or 0)
+    conn = Mock()
+    conn.execute.return_value = Mock(fetchone=lambda: (0,))
+    settings = Mock()
+    settings.database.return_value = Mock(host="127.0.0.1", port=15943,
+                                          database="Atendimento", user="u",
+                                          password="p")
+    assert core_recovery.run(settings, lambda: None, conn, date(2026, 10, 28)) == 0
+    assert [argv[1] for argv in calls] == ["19400000", "380000"]
+    assert "--ativo-only" in calls[0] and "--ativo-only" not in calls[1]
+    assert all("--approve-production" in argv for argv in calls)
+    assert all("2026-10-28" in argv for argv in calls)
+
+
+def test_recovery_stops_on_failed_range(monkeypatch):
+    monkeypatch.setattr(core_recovery.verified_bulk, "main", Mock(return_value=1))
+    conn = Mock()
+    conn.execute.return_value = Mock(fetchone=lambda: (5,))
+    settings = Mock()
+    settings.database.return_value = Mock(host="127.0.0.1", port=1,
+                                          database="Atendimento", user="u",
+                                          password="p")
+    with pytest.raises(RuntimeError):
+        core_recovery.run(settings, lambda: None, conn, date(2026, 10, 28))
+
+
+def test_recovery_requires_automation_gate(monkeypatch, capsys):
+    monkeypatch.delenv("BCD_AUTOMATION_ENABLE", raising=False)
+    assert core_recovery.main([]) == 1
+    assert "RECOVERY_FAILED RuntimeError" in capsys.readouterr().err
