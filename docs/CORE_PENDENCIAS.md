@@ -5,9 +5,11 @@
    não inferir Grupos de outras classificações.
 2. Descrição de `id_status_detalhado` não integrada à STAGING. Códigos
    especiais ficam pendentes, sem rótulo inventado.
-3. Comprador Ativo ausente da view de pedidos. Papéis comprador/participante,
-   política CPF/HMAC e vinculação entre origens aguardam aprovação; não
-   popular `dim_pessoa`/`pessoa_source_map` automaticamente.
+3. Comprador Ativo ausente da view de pedidos; não atribuir o CPF do
+   participante ao comprador. A política CPF/HMAC e a vinculação entre origens
+   foram implementadas na migração 008 (`docs/CORE_DIM_PESSOA_CONTATO.md`),
+   mas o preenchimento segue atrás do gate `CORE_PII_ENABLE_SYNC` e o backfill
+   histórico desde 01/01/2026 aguarda aprovação de volume.
 4. Composição e atribuição dos combos não comprovadas. `dim_combo` é parcial;
    combos vendidos e ticket médio de combo não são publicados.
 5. Categoria Magento disponível na inscrição é ID numérico. A descrição
@@ -18,7 +20,11 @@
    inscrições impactadas por mudanças de categoria/cupom/regras/itens,
    cancelamentos e passagem da data do evento. O código invalida eventos,
    combos e pedidos, mas não há CDC de todas as views auxiliares. O gate de
-   indicadores não poderá abrir antes do reconciliador completo.
+   indicadores não poderá abrir antes do reconciliador completo. Em
+   28/10/2026, ~1,55 milhão de inscrições rebaixadas pelo antigo `022`
+   (hash de dependências NULL) foram agendadas para nova derivação
+   (`src/automation/core_recovery.py`), e os cadastros RAW passaram a ser
+   atualizados diariamente.
 8. A homologação sintética PostgreSQL 16.13 passou com 20 testes de integração,
    mas não substitui a reconciliação histórica real. As RAW versionadas
    declaram `pedido_id` NOT NULL; inscrição com pedido NULL está suportada na
