@@ -154,5 +154,6 @@ UPDATE core.fato_inscricao f SET
 FROM final d
 WHERE f.inscricao_key=d.inscricao_key
   AND (f.dependencias_hash_snapshot IS DISTINCT FROM d.dep_hash
+       OR f.derivado_de_dependencias_hash IS NULL
        OR f.derivado_de_hash IS DISTINCT FROM f.conteudo_hash
        OR f.versao_regras_derivacao IS DISTINCT FROM 'CORE_V1_20261022');

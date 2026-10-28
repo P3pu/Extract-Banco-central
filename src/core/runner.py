@@ -10,6 +10,7 @@ from datetime import date, datetime
 import hashlib
 import os
 from pathlib import Path
+import re
 import sys
 import time
 from uuid import uuid4
@@ -76,7 +77,8 @@ INSCRIPTION_CACHE = (
     ("core_v1_magento_inscricao_cache", """
         SELECT inscricao_id,pedido_id,evento_id,evento_sku,data_evento,
                sku_inscricao,modalidade,categoria_origem,tamanho,status_pedido,
-               valor_bruto,batch_id,desconto_item,cupom,estado_pedido
+               valor_bruto,batch_id,desconto_item,cupom,estado_pedido,
+               cliente_id,cliente_ambiguo
         FROM staging.magento_inscricao
     """, ("inscricao_id", "pedido_id")),
     ("core_v1_magento_bundle_componente_cache", """
@@ -224,7 +226,7 @@ def schema_contract(conn: psycopg.Connection, scope: str) -> None:
 
 
 def unique_source_grain(conn: psycopg.Connection, scope: str, low: int, high: int,
-                        cached: bool = False) -> None:
+                        cached: bool = False, targeted: bool = False) -> None:
     views = {
         "events": (("staging.ativo_evento", "evento_id"),
                    ("staging.magento_evento", "evento_id")),
@@ -238,7 +240,10 @@ def unique_source_grain(conn: psycopg.Connection, scope: str, low: int, high: in
     for view, key in views[scope]:
         if cached and view == "staging.magento_inscricao":
             view = CACHE_REFS[view]
-        query = (f"SELECT 1 FROM {view} WHERE {key} BETWEEN %s AND %s "
+        where = f"{key} BETWEEN %s AND %s"
+        if targeted:
+            where += f" AND {key} IN (SELECT id FROM pg_temp.core_v1_target_inscricao_ids)"
+        query = (f"SELECT 1 FROM {view} WHERE {where} "
                  f"GROUP BY {key} HAVING COUNT(*)>1 LIMIT 1")
         if conn.execute(query, (low, high)).fetchone():
             raise RuntimeError(f"SCHEMA_DIVERGENTE: grão duplicado em {view}")
@@ -273,31 +278,41 @@ def prepare_inscription_cache(conn: psycopg.Connection,
         print(f"CORE_V1_CACHE_OK {name}", flush=True)
 
 
-def refresh_batch_pedidos(conn: psycopg.Connection, low: int, high: int) -> None:
+def refresh_batch_pedidos(conn: psycopg.Connection, low: int, high: int,
+                          targeted: bool = False) -> None:
     """Atualiza somente o inventário temporário dos pedidos deste lote."""
     conn.execute("TRUNCATE pg_temp.core_v1_batch_pedidos_cache")
-    conn.execute("""
+    filter_sql = "inscricao_id_origem BETWEEN %s AND %s"
+    if targeted:
+        filter_sql += (" AND inscricao_id_origem IN "
+                       "(SELECT id FROM pg_temp.core_v1_target_inscricao_ids)")
+    conn.execute(f"""
         INSERT INTO pg_temp.core_v1_batch_pedidos_cache
             (origem,pedido_id_origem)
         SELECT origem,pedido_id_origem
         FROM core.fato_inscricao
         WHERE origem='ativo'
-          AND inscricao_id_origem BETWEEN %s AND %s
+          AND {filter_sql}
           AND pedido_id_origem IS NOT NULL
         UNION
         SELECT origem,pedido_id_origem
         FROM core.fato_inscricao
         WHERE origem='magento'
-          AND inscricao_id_origem BETWEEN %s AND %s
+          AND {filter_sql}
           AND pedido_id_origem IS NOT NULL
     """, (low, high, low, high))
     conn.execute("ANALYZE pg_temp.core_v1_batch_pedidos_cache")
 
 
-def refresh_batch_magento(conn: psycopg.Connection, low: int, high: int) -> None:
+def refresh_batch_magento(conn: psycopg.Connection, low: int, high: int,
+                          targeted: bool = False) -> None:
     """Expõe ao planner o grão Magento já inserido nesta transação."""
     conn.execute("TRUNCATE pg_temp.core_v1_batch_magento_inscricao_cache")
-    conn.execute("""
+    filter_sql = "inscricao_id_origem BETWEEN %s AND %s"
+    if targeted:
+        filter_sql += (" AND inscricao_id_origem IN "
+                       "(SELECT id FROM pg_temp.core_v1_target_inscricao_ids)")
+    conn.execute(f"""
         INSERT INTO pg_temp.core_v1_batch_magento_inscricao_cache
             (inscricao_key,origem,inscricao_id_origem,conteudo_hash,
              flag_evento_teste,flag_evento_nao_mapeado,
@@ -307,18 +322,17 @@ def refresh_batch_magento(conn: psycopg.Connection, low: int, high: int) -> None
                flag_pedido_nao_encontrado,data_evento
         FROM core.fato_inscricao
         WHERE origem='magento'
-          AND inscricao_id_origem BETWEEN %s AND %s
+          AND {filter_sql}
     """, (low, high))
     conn.execute("ANALYZE pg_temp.core_v1_batch_magento_inscricao_cache")
 
 
-def inscription_sql(name: str, cached: bool) -> str:
+def inscription_sql(name: str, cached: bool, targeted: bool = False) -> str:
     body = (SQL / name).read_text(encoding="utf-8")
-    if not cached:
-        return body
-    for source, target in CACHE_REFS.items():
-        body = body.replace(source, target)
-    if name == "041_inscricao_magento.sql":
+    if cached:
+        for source, target in CACHE_REFS.items():
+            body = body.replace(source, target)
+    if cached and name == "041_inscricao_magento.sql":
         old = ("FROM core.fato_inscricao f\n"
                "    JOIN pg_temp.core_v1_magento_inscricao_cache i")
         new = ("FROM pg_temp.core_v1_batch_magento_inscricao_cache f\n"
@@ -341,7 +355,7 @@ def inscription_sql(name: str, cached: bool) -> str:
     FROM pg_temp.core_v1_magento_order_summary_cache
     WHERE pedido_id IN (SELECT DISTINCT pedido_id FROM base)
 """)
-    if name == "050_reconciliacao_pedidos.sql":
+    if cached and name == "050_reconciliacao_pedidos.sql":
         body = replace_cte(
             body, "WITH pedidos AS (", "), magento_itens AS (",
             PEDIDOS_CTE_CACHED)
@@ -356,7 +370,40 @@ def inscription_sql(name: str, cached: bool) -> str:
         if body.count(COVERAGE_CTE) != 1:
             raise RuntimeError("Contrato da reconciliação Ativo mudou")
         body = body.replace(COVERAGE_CTE, COVERAGE_CTE_CACHED)
+    if targeted:
+        marker = "BETWEEN %(id_min)s AND %(id_max)s"
+        expected = {"030_inscricao_base.sql": 2, "040_inscricao_ativo.sql": 1,
+                    "041_inscricao_magento.sql": 4,
+                    "050_reconciliacao_pedidos.sql": 0 if cached else 1,
+                    "060_alertas.sql": 12}
+        if name not in expected or body.count(marker) != expected[name]:
+            raise RuntimeError("Contrato de filtros CORE mudou")
+        pattern = r"([A-Za-z_][\w.]*) BETWEEN %\(id_min\)s AND %\(id_max\)s"
+        body, replaced = re.subn(
+            pattern,
+            lambda match: (f"{match.group(0)} AND {match.group(1)} "
+                           "IN (SELECT id FROM pg_temp.core_v1_target_inscricao_ids)"),
+            body,
+        )
+        if replaced != expected[name]:
+            raise RuntimeError("Filtro de IDs CORE não pôde ser limitado")
     return body
+
+
+def prepare_target_inscriptions(conn: psycopg.Connection, low: int, high: int,
+                                selected_ids: list[int]) -> None:
+    ids = sorted({int(value) for value in selected_ids})
+    if not ids or any(value < low or value > high for value in ids):
+        raise ValueError("IDs selecionados fora da faixa CORE")
+    if conn.execute("SELECT to_regclass('pg_temp.core_v1_target_inscricao_ids')")\
+            .fetchone()[0] is None:
+        conn.execute("CREATE TEMP TABLE core_v1_target_inscricao_ids "
+                     "(id BIGINT PRIMARY KEY) ON COMMIT PRESERVE ROWS")
+    conn.execute("TRUNCATE pg_temp.core_v1_target_inscricao_ids")
+    with conn.cursor() as cursor:
+        cursor.executemany("INSERT INTO pg_temp.core_v1_target_inscricao_ids(id) "
+                           "VALUES (%s)", [(value,) for value in ids])
+    conn.execute("ANALYZE pg_temp.core_v1_target_inscricao_ids")
 
 
 def source_range_has_rows(conn: psycopg.Connection, low: int, high: int) -> bool:
@@ -414,8 +461,11 @@ def migrate(conn: psycopg.Connection) -> None:
 
 
 def run_range(conn: psycopg.Connection, scope: str, low: int, high: int,
-              as_of: date, cached: bool = False) -> tuple[str, int]:
+              as_of: date, cached: bool = False,
+              selected_ids: list[int] | None = None) -> tuple[str, int]:
     validate_range(low, high)
+    if selected_ids is not None and scope != "inscriptions":
+        raise ValueError("Seleção de IDs permitida apenas para inscrições")
     if cached and (scope != "inscriptions" or conn.execute(
             "SELECT to_regclass('pg_temp.core_v1_magento_inscricao_cache')"
             ).fetchone()[0] is None):
@@ -425,6 +475,8 @@ def run_range(conn: psycopg.Connection, scope: str, low: int, high: int,
     batch_id = str(uuid4())
     total = 0
     try:
+        if selected_ids is not None:
+            prepare_target_inscriptions(conn, low, high, selected_ids)
         with conn.transaction():
             conn.execute(
                 "INSERT INTO core.core_etl_execucao "
@@ -435,17 +487,23 @@ def run_range(conn: psycopg.Connection, scope: str, low: int, high: int,
         try:
             with conn.transaction():
                 schema_contract(conn, scope)
-                if cached:
+                if selected_ids is not None:
+                    unique_source_grain(conn, scope, low, high, cached=cached,
+                                        targeted=True)
+                elif cached:
                     unique_source_grain(conn, scope, low, high, cached=True)
                 else:
                     unique_source_grain(conn, scope, low, high)
                 for name in STEPS[scope]:
                     started = time.monotonic()
                     if cached and name == "041_inscricao_magento.sql":
-                        refresh_batch_magento(conn, low, high)
+                        refresh_batch_magento(conn, low, high,
+                                              targeted=selected_ids is not None)
                     if cached and name == "050_reconciliacao_pedidos.sql":
-                        refresh_batch_pedidos(conn, low, high)
-                    result = conn.execute(inscription_sql(name, cached),
+                        refresh_batch_pedidos(conn, low, high,
+                                              targeted=selected_ids is not None)
+                    result = conn.execute(inscription_sql(
+                        name, cached, targeted=selected_ids is not None),
                                           {"id_min": low, "id_max": high,
                                            "as_of_date": as_of})
                     total += max(result.rowcount, 0)

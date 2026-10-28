@@ -22,7 +22,8 @@ def log(event, **fields):
                       "source": "ativo", "table": "sa_pedido", **fields}, default=str), flush=True)
 
 
-def load(connection, reader, mode, batch_size, batch_id, old_id, days, progress, entity="pedido"):
+def load(connection, reader, mode, batch_size, batch_id, old_id, days, progress,
+         entity="pedido", on_rows=None):
     contract, _, ddl = ENTITIES[entity]
     target = ("raw", f"ativo_{entity}")
     if mode != "FULL":
@@ -47,6 +48,10 @@ def load(connection, reader, mode, batch_size, batch_id, old_id, days, progress,
         progress["rows_extracted"] += len(rows)
         progress["rows_loaded"] += loader.upsert(connection, rows, batch_id, target,
                                                  columns=contract.COLUMNS, pk=contract.PK, source="ativo")
+        if on_rows is not None:
+            # O diário local é durável antes do COMMIT RAW; entradas de uma
+            # transação revertida são inofensivas e serão reaplicadas na CORE.
+            on_rows("ativo", entity, batch_id, rows, contract.COLUMNS)
         last = rows[-1]
         cursor = (last[contract.COLUMNS.index("dt_pedido")], last[0]) if mode == "RECONCILIATION" and entity == "pedido" else last[0]
         if mode != "RECONCILIATION":
@@ -60,7 +65,7 @@ def load(connection, reader, mode, batch_size, batch_id, old_id, days, progress,
     return newest
 
 
-def run(settings, mode, batch_size=None, days=None, entity="pedido"):
+def run(settings, mode, batch_size=None, days=None, entity="pedido", on_rows=None):
     batch_size = settings.batch_size if batch_size is None else batch_size
     days = settings.reconciliation_days if days is None else days
     if mode not in {"FULL", "INCREMENTAL", "RECONCILIATION"} or batch_size <= 0 or days <= 0 or entity not in ENTITIES:
@@ -89,7 +94,8 @@ def run(settings, mode, batch_size=None, days=None, entity="pedido"):
             with mysql.connect(settings, "ativo") as reader:
                 db = settings.database("ativo").database
                 contract.validate_schema(reader.columns(db, f"sa_{entity}"), reader.indexes(db, f"sa_{entity}"))
-                newest = load(connection, reader, mode, batch_size, batch_id, old, days, progress, entity=entity)
+                newest = load(connection, reader, mode, batch_size, batch_id, old, days, progress,
+                              entity=entity, on_rows=on_rows)
             connection.execute(
                 "INSERT INTO raw._etl_watermark (pipeline_name,source_system,source_table,strategy,"
                 "watermark_column,watermark_value,last_success_at) VALUES (%s,%s,%s,'pk+reconciliation',"

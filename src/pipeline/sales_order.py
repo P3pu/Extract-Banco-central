@@ -24,7 +24,8 @@ def log(event, **fields):
                       "source": "magento", "table": "sales_order", **fields}, default=str), flush=True)
 
 
-def load(connection, reader, mode, batch_size, batch_id, old, progress, entity="sales_order"):
+def load(connection, reader, mode, batch_size, batch_id, old, progress,
+         entity="sales_order", on_rows=None):
     contract, _, ddl = ENTITIES[entity]
     source_table = getattr(contract, "TABLE", entity)
     target = ("raw", f"magento_{entity}")
@@ -48,6 +49,10 @@ def load(connection, reader, mode, batch_size, batch_id, old, progress, entity="
         progress["rows_extracted"] += len(rows)
         progress["rows_loaded"] += loader.upsert(connection, rows, batch_id, target,
                                                  columns=contract.COLUMNS, pk=contract.PK)
+        if on_rows is not None:
+            # Registrar IDs antes do COMMIT PostgreSQL: uma falha posterior pode
+            # causar reprocessamento extra, mas nunca perder uma mudança.
+            on_rows("magento", entity, batch_id, rows, contract.COLUMNS)
         for row in rows:
             value = row[contract.COLUMNS.index("updated_at")]
             newest = max(newest, value) if newest else value
@@ -63,7 +68,7 @@ def load(connection, reader, mode, batch_size, batch_id, old, progress, entity="
     return newest
 
 
-def run(settings, mode, batch_size=None, entity="sales_order"):
+def run(settings, mode, batch_size=None, entity="sales_order", on_rows=None):
     batch_size = settings.batch_size if batch_size is None else batch_size
     if mode not in {"FULL", "INCREMENTAL"} or batch_size <= 0 or entity not in ENTITIES:
         raise ValueError("Modo ou lote inválido")
@@ -92,7 +97,8 @@ def run(settings, mode, batch_size=None, entity="sales_order"):
             with mysql.connect(settings, "magento") as reader:
                 db = settings.database("magento").database
                 contract.validate_schema(reader.columns(db, source_table), reader.indexes(db, source_table))
-                newest = load(connection, reader, mode, batch_size, batch_id, old, progress, entity=entity)
+                newest = load(connection, reader, mode, batch_size, batch_id, old, progress,
+                              entity=entity, on_rows=on_rows)
             connection.execute(
                 "INSERT INTO raw._etl_watermark (pipeline_name,source_system,source_table,strategy,"
                 "watermark_column,watermark_value,last_success_at) VALUES (%s,%s,%s,'updated_at',"

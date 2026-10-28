@@ -162,6 +162,15 @@ def test_invalidation_and_dependency_hash_cover_auxiliary_sources():
         body = (SQL / name).read_text(encoding="utf-8")
         assert "dependencias_hash_snapshot" in body
         assert "%(as_of_date)s" in body
+        # Inscrições invalidadas por 013/014/022 precisam voltar a ser derivadas.
+        assert "OR f.derivado_de_dependencias_hash IS NULL" in body
+
+
+def test_order_invalidation_limited_to_changed_orders_of_same_origin():
+    body = (SQL / "022_invalidate_order_dependents.sql").read_text(encoding="utf-8")
+    assert "p.atualizado_core_em >= now()" in body
+    assert "f.origem=p.origem" in body
+    assert "f.pedido_id_origem=p.pedido_id_origem" in body
 
 
 def test_compose_is_local_and_volume_unique():
