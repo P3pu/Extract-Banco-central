@@ -8,6 +8,8 @@ from src.automation import core_recovery
 
 def test_recovery_runs_ativo_then_magento_with_production_gate(monkeypatch):
     calls = []
+    aux = Mock(return_value=33)
+    monkeypatch.setattr(core_recovery.local_raw_core, "run_aux", aux)
     monkeypatch.setattr(core_recovery.verified_bulk, "main",
                         lambda argv: calls.append(argv) or 0)
     conn = Mock()
@@ -21,9 +23,11 @@ def test_recovery_runs_ativo_then_magento_with_production_gate(monkeypatch):
     assert "--ativo-only" in calls[0] and "--ativo-only" not in calls[1]
     assert all("--approve-production" in argv for argv in calls)
     assert all("2026-10-28" in argv for argv in calls)
+    assert aux.call_args.args[1] == 31
 
 
 def test_recovery_stops_on_failed_range(monkeypatch):
+    monkeypatch.setattr(core_recovery.local_raw_core, "run_aux", Mock(return_value=1))
     monkeypatch.setattr(core_recovery.verified_bulk, "main", Mock(return_value=1))
     conn = Mock()
     conn.execute.return_value = Mock(fetchone=lambda: (5,))

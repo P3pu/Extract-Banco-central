@@ -28,6 +28,23 @@ RECONCILIATION_INTERVAL = timedelta(days=15)
 CONTROL_HEARTBEAT_SECONDS = 15
 ENTITIES = (("ativo", "pedido"), ("ativo", "pedido_evento"),
             ("magento", "sales_order"), ("magento", "sales_order_item"))
+# Cadastros e referenciais: sem eles, pedidos novos apontam para eventos,
+# usuários, produtos e clientes ausentes da RAW.
+AUX_INTERVAL = timedelta(hours=24)
+AUX_COMMANDS = (
+    ("snapshot", "ativo", (None,)),
+    ("incremental", "ativo", ("usuario", "usuario_balcao", "pedido_pagamento",
+                              "transacao", "pedido_produto", "pedido_endereco",
+                              "cupom_desconto_item")),
+    ("incremental", "magento", ("product", "product_varchar", "product_int",
+                                "product_datetime", "product_link", "customer",
+                                "customer_address", "customer_order_item",
+                                "company", "company_user", "salesrule",
+                                "salesrule_label")),
+    ("snapshot", "magento", ("eav_attribute", "option_value")),
+)
+AUX_RECONCILE = ("usuario", "usuario_balcao", "pedido_pagamento", "transacao",
+                 "pedido_endereco")
 ES_CONTINUOUS = 0x80000000
 ES_SYSTEM_REQUIRED = 0x00000001
 
@@ -193,6 +210,40 @@ def run_raw(settings, journal, due, assert_control=lambda: None):
                          on_rows=journal.record_rows)
 
 
+def aux_due(conn):
+    """(cadastros vencidos, reconciliação de cadastros vencida)."""
+    now = conn.execute("SELECT clock_timestamp()").fetchone()[0]
+    snapshot, reconciled = conn.execute(
+        "SELECT max(finished_at) FILTER (WHERE source_table='sa_evento' "
+        "AND mode='SNAPSHOT'), max(finished_at) FILTER (WHERE "
+        "source_table='sa_usuario' AND mode='RECONCILIATION') "
+        "FROM raw._etl_runs WHERE source_system='ativo' AND status='SUCCESS'"
+    ).fetchone()
+    for previous in (snapshot, reconciled):
+        if previous is not None and previous > now:
+            raise RuntimeError("Relógio dos cadastros inconsistente")
+    return (snapshot is None or now - snapshot >= AUX_INTERVAL,
+            reconciled is None or now - reconciled >= RECONCILIATION_INTERVAL)
+
+
+def run_aux(settings, reconcile_days=None, assert_control=lambda: None):
+    """Executa a CLI RAW existente pelo túnel; sem FULL."""
+    from src import main as cli
+    pg = settings.database("postgres")
+    os.environ.update(POSTGRES_HOST=pg.host, POSTGRES_PORT=str(pg.port),
+                      POSTGRES_SSLMODE="disable")
+    commands = [[command, "--source", source] + (["--entity", entity] if entity else [])
+                for command, source, entities in AUX_COMMANDS for entity in entities]
+    if reconcile_days is not None:
+        commands += [["reconcile", "--source", "ativo", "--entity", entity,
+                      "--days", str(reconcile_days)] for entity in AUX_RECONCILE]
+    for argv in commands:
+        assert_control()
+        if cli.main(argv) != 0:
+            raise RuntimeError("Carga RAW de cadastros falhou")
+    return len(commands)
+
+
 def run_core(settings, journal, assert_control=lambda: None):
     pending = journal.snapshot()
     if not pending:
@@ -347,10 +398,15 @@ def main(argv=None):
                         result = run_core(settings, journal, assert_control)
                         success_message = f"AUTOMATION_CORE_OK {result}"
                     else:
+                        aux, aux_reconcile = aux_due(conn)
+                        aux_steps = run_aux(
+                            settings,
+                            RECONCILIATION_DAYS if aux_reconcile else None,
+                            assert_control) if aux else 0
                         due = due_reconciliations(conn)
                         run_raw(settings, journal, due, assert_control)
                         result = run_core(settings, journal, assert_control)
-                        success_message = (f"AUTOMATION_CYCLE_OK "
+                        success_message = (f"AUTOMATION_CYCLE_OK aux_steps={aux_steps} "
                                            f"due_reconciliation={len(due)} core={result}")
                 finally:
                     journal.close()

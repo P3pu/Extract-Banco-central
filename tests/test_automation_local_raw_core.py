@@ -95,3 +95,39 @@ def test_tunnel_forwards_to_original_postgres_port(monkeypatch, tmp_path):
         assert args[args.index("-L") + 1] == "127.0.0.1:15943:127.0.0.1:59381"
         assert args[-1] == "bcd_tunnel@db.example.invalid"
     process.terminate.assert_called_once()
+
+
+def test_aux_due_daily_and_reconciliation_every_fifteen_days():
+    now = datetime(2026, 10, 28, tzinfo=timezone.utc)
+    conn = Mock()
+    conn.execute.side_effect = [
+        Mock(fetchone=lambda: (now,)),
+        Mock(fetchone=lambda: (now - timedelta(hours=23), now - timedelta(days=15))),
+    ]
+    assert local_raw_core.aux_due(conn) == (False, True)
+
+
+def test_run_aux_uses_tunnel_cli_without_full(monkeypatch):
+    from src import main as cli
+    calls = []
+    monkeypatch.setattr(cli, "main", lambda argv: calls.append(argv) or 0)
+    monkeypatch.setattr(local_raw_core.os, "environ", {})
+    settings = Mock()
+    settings.database.return_value = Mock(host="127.0.0.1", port=15943)
+    steps = local_raw_core.run_aux(settings, 31)
+    assert steps == len(calls)
+    assert all(argv[0] in {"snapshot", "incremental", "reconcile"} for argv in calls)
+    assert ["snapshot", "--source", "ativo"] in calls
+    assert ["incremental", "--source", "magento", "--entity", "customer"] in calls
+    assert ["reconcile", "--source", "ativo", "--entity", "usuario", "--days", "31"] in calls
+    assert local_raw_core.os.environ["POSTGRES_PORT"] == "15943"
+
+
+def test_run_aux_stops_on_failed_command(monkeypatch):
+    from src import main as cli
+    monkeypatch.setattr(cli, "main", Mock(return_value=1))
+    monkeypatch.setattr(local_raw_core.os, "environ", {})
+    settings = Mock()
+    settings.database.return_value = Mock(host="127.0.0.1", port=15943)
+    with pytest.raises(RuntimeError):
+        local_raw_core.run_aux(settings)

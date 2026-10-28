@@ -9,12 +9,18 @@ import argparse
 from datetime import datetime
 import os
 import sys
+import time
 from zoneinfo import ZoneInfo
 
 from src.automation import local_raw_core
 from src.config.settings import Settings
 from src.core import verified_bulk
 
+
+LOCK_WAIT_SECONDS = 45 * 60
+LOCK_RETRY_SECONDS = 60
+# Cadastros parados desde 28/09: a janela cobre o mês sem atualização.
+AUX_RECONCILE_DAYS = 31
 
 # Faixas com derivado_de_dependencias_hash NULL medidas em 28/10/2026.
 # Ativo primeiro: faixa pequena, confere o caminho antes da carga longa.
@@ -32,6 +38,8 @@ def stuck_count(conn):
 
 
 def run(settings, assert_control, conn, as_of):
+    steps = local_raw_core.run_aux(settings, AUX_RECONCILE_DAYS, assert_control)
+    print(f"RECOVERY_AUX_OK steps={steps}", flush=True)
     pg = settings.database("postgres")
     os.environ.update(CORE_PG_HOST=pg.host, CORE_PG_PORT=str(pg.port),
                       CORE_PG_DATABASE=pg.database, CORE_PG_USER=pg.user,
@@ -66,8 +74,26 @@ def main(argv=None):
         with local_raw_core.prevent_idle_sleep(), \
                 local_raw_core.postgres_tunnel(Settings.load()):
             settings = local_raw_core.local_settings()
-            with local_raw_core.control_connection(settings) as (conn, assert_control):
+            # O ciclo horário dispara no mesmo minuto; aguarda o lock dele.
+            deadline = time.monotonic() + LOCK_WAIT_SECONDS
+            while True:
+                try:
+                    control = local_raw_core.control_connection(settings)
+                    conn, assert_control = control.__enter__()
+                    break
+                except RuntimeError as exc:
+                    if ("Outra execução" not in str(exc)
+                            or time.monotonic() > deadline):
+                        raise
+                    print("RECOVERY_WAITING_LOCK", flush=True)
+                    time.sleep(LOCK_RETRY_SECONDS)
+            try:
                 run(settings, assert_control, conn, as_of)
+            except BaseException:
+                if not control.__exit__(*sys.exc_info()):
+                    raise
+            else:
+                control.__exit__(None, None, None)
         print("RECOVERY_OK", flush=True)
         return 0
     except Exception as exc:
