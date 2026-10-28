@@ -1,8 +1,10 @@
 # CORE V1 — regras implementadas
 
-Esta implementação é **código para revisão**. Nenhum SQL CORE foi aplicado ao
-`Atendimento` nesta tarefa. O executor CORE é separado do D1/RAW e lê somente
-as views STAGING PostgreSQL. A view de indicadores permanece `WHERE FALSE`.
+Versão das regras: `CORE_V1_20261022`. A CORE está carregada no `Atendimento`
+desde 23/10/2026 (migrações 001, 002, 006, 007 e 008) e é mantida pela
+automação local horária (`docs/AUTOMACAO_LOCAL_RAW_CORE.md`). O executor CORE
+é separado do D1/RAW e lê somente as views STAGING PostgreSQL. A view de
+indicadores `core.fato_inscricao_indicadores_validos` permanece `WHERE FALSE`.
 
 ## Grão e identidade
 
@@ -12,8 +14,17 @@ as views STAGING PostgreSQL. A view de indicadores permanece `WHERE FALSE`.
   Magento = bundle pai. Filhos não viram inscrições. Órfãs e pedido NULL ficam.
 - Participante Ativo é preservado com namespace `Usuario` ou `UsuarioBalcao`
   quando somente um identificador existe. Ambos preenchidos ficam NULL e
-  pendentes. Participante Magento fica NULL. Comprador Ativo fica NULL. Não há
-  matching de pessoa/CPF nem união de eventos pelo SKU.
+  pendentes. `participante_id_origem` Magento fica NULL; a `participante_key`
+  Magento só é preenchida pela sincronização de contatos, quando o cliente do
+  bundle não é ambíguo. Comprador Ativo fica NULL e nunca recebe o CPF do participante. Não
+  há união de eventos pelo SKU.
+- `dim_pessoa` (migração 008): CPF com dígitos válidos vira token HMAC-SHA256 e
+  reúne comprador e participante, inclusive entre Magento e Ativo, numa única
+  `pessoa_key`. CPF ausente ou inválido gera uma pessoa por ID de origem
+  (`SOURCE_ID`). Nunca há junção por nome ou e-mail. Conflito de CPF ou fusão
+  de duas `pessoa_key` interrompe a carga para revisão. CPF, nome e e-mail
+  ficam só na dimensão, com preenchimento atrás do gate
+  `CORE_PII_ENABLE_SYNC`. Detalhes em `docs/CORE_DIM_PESSOA_CONTATO.md`.
 
 ## Status e pagamento
 
@@ -62,12 +73,40 @@ recebe ID/nome Ativo, mas composição e quantidade prevista permanecem NULL.
 Não há cálculo confiável de combos vendidos/ticket até validação de composição
 e atribuição de cada inscrição.
 
+## Estado da derivação
+
+Cada inscrição termina `VALIDADO` ou `PENDENTE`; `PENDENTE` significa falta de
+prova, não erro.
+
+- Ativo fica `PENDENTE` com pendência financeira, status não interpretável,
+  classificação pendente sem sinal de grupos ou elegibilidade desconhecida.
+- Magento fica `PENDENTE` com status `INDETERMINADO`, quantidade ambígua,
+  desconto não conciliado, evento não mapeado ou pedido não encontrado.
+- A derivação grava `derivado_de_hash` (conteúdo) e
+  `dependencias_hash_snapshot` (status, finanças, auxiliares, regra e data de
+  referência). Divergência em qualquer um, versão de regra diferente ou
+  `derivado_de_dependencias_hash` NULL (inscrição invalidada) provoca nova
+  derivação.
+
+## Alertas de qualidade
+
+`core.core_alerta_qualidade` guarda apenas regra, severidade e ID numérico de
+origem: `STATUS_CONTRADITORIO`, `STATUS_ESPECIAL`, `CANCELAMENTO_PARCIAL`,
+`REEMBOLSO`, `QTD_BUNDLE`, `DESCONTO_CABECALHO`, `DESCONTO_INVALIDO`,
+`CUPOM_HEADER_AUSENTE`, `EVENTO_SEM_MAPA`, `ORFAO_PEDIDO`, `COMBO_COMPOSICAO`
+e `DATA_INVALIDA`.
+
 ## Reprocessamento e segurança
 
 Ranges têm no máximo 100.000 IDs inclusivos. Eventos, combos e pedidos
-reprocessados invalidam inscrições afetadas. Alterações em cadastros auxiliares
+reprocessados invalidam inscrições afetadas. Desde 28/10/2026, a invalidação
+por pedido (`022`) atinge só inscrições de pedidos cujo `conteudo_hash` mudou
+na própria transação e da mesma origem; antes, faixas inteiras de pedidos de
+ambas as origens eram invalidadas sem nova derivação. Alterações em cadastros auxiliares
 (categoria, cupom, regra, filho de bundle) exigem reprocessamento da faixa de
 inscrições afetada; a reconciliação deve concluir antes de qualquer abertura
 da view. O runner usa lock global, transações, auditoria, hash de dependências
-e bloqueio de `Atendimento` sem dois sinais explícitos de aprovação. Nenhuma
-rota FULL/MySQL/timer foi adicionada.
+e bloqueio de `Atendimento` sem dois sinais explícitos de aprovação. Não há
+rota FULL nem leitura MySQL na CORE. A automação local horária leva à CORE só
+os IDs RAW alterados, atualiza os cadastros RAW uma vez por dia e recusa rodar
+se a view de indicadores estiver aberta.
