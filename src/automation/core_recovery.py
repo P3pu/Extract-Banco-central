@@ -26,7 +26,8 @@ AUX_RECONCILE_DAYS = 31
 # Ativo primeiro: faixa pequena, confere o caminho antes da carga longa.
 RANGES = (
     ("ativo", 19_400_000, 19_619_999, 20_000, True),
-    ("magento", 380_000, 7_309_999, 10_000, False),
+    # Desde 0: inclui inscrições dos eventos unificados em 28/10 abaixo de 380 mil.
+    ("magento", 0, 7_309_999, 10_000, False),
 )
 
 

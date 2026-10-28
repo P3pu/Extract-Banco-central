@@ -19,7 +19,7 @@ def test_recovery_runs_ativo_then_magento_with_production_gate(monkeypatch):
                                           database="Atendimento", user="u",
                                           password="p")
     assert core_recovery.run(settings, lambda: None, conn, date(2026, 10, 28)) == 0
-    assert [argv[1] for argv in calls] == ["19400000", "380000"]
+    assert [argv[1] for argv in calls] == ["19400000", "0"]
     assert "--ativo-only" in calls[0] and "--ativo-only" not in calls[1]
     assert all("--approve-production" in argv for argv in calls)
     assert all("2026-10-28" in argv for argv in calls)
