@@ -24,7 +24,8 @@
    28/10/2026, ~1,55 milhão de inscrições rebaixadas pelo antigo `022`
    (hash de dependências NULL) foram agendadas para nova derivação
    (`src/automation/core_recovery.py`), e os cadastros RAW passaram a ser
-   atualizados diariamente.
+   atualizados diariamente. A rederivação concluiu em 29/10/2026 às 13:58
+   com `RECOVERY_STUCK_AFTER 0` e auditorias de contagem sem divergência.
 8. A homologação sintética PostgreSQL 16.13 passou com 20 testes de integração,
    mas não substitui a reconciliação histórica real. As RAW versionadas
    declaram `pedido_id` NOT NULL; inscrição com pedido NULL está suportada na

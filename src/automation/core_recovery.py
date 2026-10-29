@@ -38,6 +38,18 @@ def stuck_count(conn):
     ).fetchone()[0]
 
 
+def resume_low(conn, origin, low, high, chunk):
+    """Retoma no lote da menor inscrição ainda pendente; None se a faixa acabou."""
+    first = conn.execute(
+        "SELECT min(inscricao_id_origem) FROM core.fato_inscricao "
+        "WHERE origem=%s AND derivado_de_dependencias_hash IS NULL "
+        "AND inscricao_id_origem BETWEEN %s AND %s", (origin, low, high)
+    ).fetchone()[0]
+    if first is None:
+        return None
+    return low + max(first - low, 0) // chunk * chunk
+
+
 def run(settings, assert_control, conn, as_of):
     steps, failed = local_raw_core.run_aux(settings, AUX_RECONCILE_DAYS, assert_control)
     if failed:
@@ -51,6 +63,11 @@ def run(settings, assert_control, conn, as_of):
     print(f"RECOVERY_STUCK_BEFORE {stuck_count(conn)}", flush=True)
     for label, low, high, chunk, ativo_only in RANGES:
         assert_control()
+        # Uma execução interrompida não refaz os lotes já rederivados.
+        low = resume_low(conn, label, low, high, chunk)
+        if low is None:
+            print(f"RECOVERY_RANGE_DONE {label}", flush=True)
+            continue
         print(f"RECOVERY_RANGE_START {label} {low} {high}", flush=True)
         argv = ["--min-id", str(low), "--max-id", str(high),
                 "--chunk-size", str(chunk), "--as-of", as_of.isoformat(),
