@@ -75,6 +75,11 @@ Windows. Nada de RAW, CORE, watermarks ou diário é apagado.
 - Quando a regra da AWS sair: `ATIVO_MYSQL_PORT=3306` em `/etc/bcd/app.env`,
   remover a linha do RDS em `/etc/hosts`, remover `permitlisten` da chave
   `bcd_tunnel` e apagar a tarefa `BancoCentral-Ativo-Tunnel`.
+- 29/10/2026: a ponte do Ativo ficou fora de 28/10 13:57 a 29/10 08:55
+  (horário de Brasília) porque o notebook suspende após 5 minutos ocioso na
+  tomada; os ciclos terminaram `AUTOMATION_CYCLE_PARTIAL failed=ativo` e o
+  Ativo retomou pelo watermark sem perda. Release `fc510f8` instalada
+  (retomada da recuperação CORE).
 - A chave HMAC de CPF não foi encontrada no notebook. O gate
   `CORE_PII_ENABLE_SYNC` continua fechado; antes de abri-lo, localizar a chave
   usada no backfill de 27/10 ou definir rotação, para não gerar tokens
