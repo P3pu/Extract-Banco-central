@@ -67,7 +67,18 @@ fica com classificação pendente. Magento aceita prefixo GR e etiqueta de
 regras; categoria numérica não é tratada como texto. Cortesia usa categoria,
 etiqueta ou bruto zero somente na ausência de sinal de grupos.
 
-Eventos nascem separados por `(origem, ID)`. Apenas o evento Ativo 22054 tem
+Eventos nascem separados por `(origem, ID)`. A unificação entre origens só
+existe por vínculo validado: o evento Magento passa a apontar para o
+`evento_key` do evento Ativo em `core.evento_source_map`
+(`MANUAL_VALIDADO`, com `revisado_por`/`revisado_em`), e os dois eventos
+ficam `UNIFICADO_VALIDADO` na `dim_evento`. A carga de eventos não sobrescreve
+esses vínculos. Regra aprovada em 28/10/2026: mesmo SKU e mesma data unificam,
+ainda que o nome esteja escrito de outra forma (patrocinador, cidade abreviada,
+ano, edição), desde que haja um único melhor evento Ativo e que não seja
+"Arena" só de um lado. Empates, datas diferentes e casos "Arena" ficam
+separados até revisão manual. Os 482 vínculos aplicados estão em
+`sql/core/v1/data/evento_unificacao_20261028.csv` e são aplicados ou
+revertidos por `python -m src.core.event_unification plan|apply|revert`. Apenas o evento Ativo 22054 tem
 evidência versionada de teste; outros precisam de curadoria. `dim_combo`
 recebe ID/nome Ativo, mas composição e quantidade prevista permanecem NULL.
 Não há cálculo confiável de combos vendidos/ticket até validação de composição

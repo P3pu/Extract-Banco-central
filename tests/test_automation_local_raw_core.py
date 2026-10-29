@@ -114,8 +114,8 @@ def test_run_aux_uses_tunnel_cli_without_full(monkeypatch):
     monkeypatch.setattr(local_raw_core.os, "environ", {})
     settings = Mock()
     settings.database.return_value = Mock(host="127.0.0.1", port=15943)
-    steps = local_raw_core.run_aux(settings, 31)
-    assert steps == len(calls)
+    steps, failed = local_raw_core.run_aux(settings, 31)
+    assert steps == len(calls) and failed == set()
     assert all(argv[0] in {"snapshot", "incremental", "reconcile"} for argv in calls)
     assert ["snapshot", "--source", "ativo"] in calls
     assert ["incremental", "--source", "magento", "--entity", "customer"] in calls
@@ -123,11 +123,54 @@ def test_run_aux_uses_tunnel_cli_without_full(monkeypatch):
     assert local_raw_core.os.environ["POSTGRES_PORT"] == "15943"
 
 
-def test_run_aux_stops_on_failed_command(monkeypatch):
+def test_run_aux_skips_failed_source_and_keeps_others(monkeypatch):
     from src import main as cli
-    monkeypatch.setattr(cli, "main", Mock(return_value=1))
+    calls = []
+    monkeypatch.setattr(cli, "main", lambda argv: calls.append(argv) or
+                        (1 if argv[2] == "ativo" else 0))
     monkeypatch.setattr(local_raw_core.os, "environ", {})
     settings = Mock()
     settings.database.return_value = Mock(host="127.0.0.1", port=15943)
-    with pytest.raises(RuntimeError):
-        local_raw_core.run_aux(settings)
+    _steps, failed = local_raw_core.run_aux(settings, 31)
+    assert failed == {"ativo"}
+    assert sum(argv[2] == "ativo" for argv in calls) == 1
+    assert any(argv[2] == "magento" for argv in calls)
+
+
+def test_raw_skips_unavailable_ativo_and_still_loads_magento(monkeypatch):
+    from src.pipeline import ativo_pedido, sales_order
+    calls = []
+
+    def ativo(_settings, mode, **kwargs):
+        calls.append(("ativo", kwargs["entity"]))
+        raise OSError("túnel indisponível")
+
+    monkeypatch.setattr(ativo_pedido, "run", ativo)
+    monkeypatch.setattr(sales_order, "run", lambda _settings, mode, **kwargs:
+                        calls.append(("magento", kwargs["entity"])))
+    failed = local_raw_core.run_raw(Mock(), Mock(record_rows=Mock()), ["pedido"])
+    assert failed == {"ativo"}
+    assert calls == [("ativo", "pedido"), ("magento", "sales_order"),
+                     ("magento", "sales_order_item")]
+
+
+def test_direct_mode_uses_server_loopback_without_tunnel(monkeypatch):
+    monkeypatch.setenv("BCD_DIRECT_POSTGRES", "1")
+    original = Mock()
+    original.env = {"POSTGRES_HOST": "127.0.0.1"}
+    original.database.return_value = Mock(port=59381)
+    load = Mock(side_effect=[original, "local"])
+    monkeypatch.setattr(local_raw_core.Settings, "load", load)
+    assert local_raw_core.local_settings() == "local"
+    env = load.call_args_list[1].args[0]
+    assert env["POSTGRES_HOST"] == "127.0.0.1" and env["POSTGRES_PORT"] == "59381"
+    popen = Mock()
+    monkeypatch.setattr(local_raw_core.subprocess, "Popen", popen)
+    with local_raw_core.postgres_access(Mock()):
+        pass
+    popen.assert_not_called()
+
+
+def test_state_dir_overrides_windows_journal_path(monkeypatch, tmp_path):
+    monkeypatch.setenv("BCD_STATE_DIR", str(tmp_path))
+    assert local_raw_core.journal_path() == tmp_path / "pending.sqlite"

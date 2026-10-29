@@ -26,7 +26,8 @@ AUX_RECONCILE_DAYS = 31
 # Ativo primeiro: faixa pequena, confere o caminho antes da carga longa.
 RANGES = (
     ("ativo", 19_400_000, 19_619_999, 20_000, True),
-    ("magento", 380_000, 7_309_999, 10_000, False),
+    # Desde 0: inclui inscrições dos eventos unificados em 28/10 abaixo de 380 mil.
+    ("magento", 0, 7_309_999, 10_000, False),
 )
 
 
@@ -38,7 +39,9 @@ def stuck_count(conn):
 
 
 def run(settings, assert_control, conn, as_of):
-    steps = local_raw_core.run_aux(settings, AUX_RECONCILE_DAYS, assert_control)
+    steps, failed = local_raw_core.run_aux(settings, AUX_RECONCILE_DAYS, assert_control)
+    if failed:
+        raise RuntimeError("Carga RAW de cadastros falhou")
     print(f"RECOVERY_AUX_OK steps={steps}", flush=True)
     pg = settings.database("postgres")
     os.environ.update(CORE_PG_HOST=pg.host, CORE_PG_PORT=str(pg.port),
@@ -72,7 +75,7 @@ def main(argv=None):
             raise RuntimeError("Automação de escrita desabilitada")
         as_of = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
         with local_raw_core.prevent_idle_sleep(), \
-                local_raw_core.postgres_tunnel(Settings.load()):
+                local_raw_core.postgres_access(Settings.load()):
             settings = local_raw_core.local_settings()
             # O ciclo horário dispara no mesmo minuto; aguarda o lock dele.
             deadline = time.monotonic() + LOCK_WAIT_SECONDS
