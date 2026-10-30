@@ -50,11 +50,14 @@ def test_core_refresh_runs_orders_before_inscriptions_and_keeps_gate(monkeypatch
     contacts = Mock(return_value={"contacts": 1, "installed": True,
                                   "enabled": True})
     monkeypatch.setattr(core_refresh, "sync_changed", contacts)
+    combos = Mock(return_value=2)
+    monkeypatch.setattr(core_refresh.combo_attribution, "sync_changed", combos)
     assert core_refresh.refresh(conn, [("ativo", "order", 8, 8)]) == {
         "orders": 1, "inscriptions": 1,
     }
     assert calls == [("orders", 0, 99999, None), ("inscriptions", 99, 99, [99])]
     contacts.assert_called_once_with(conn, {"ativo": {8}}, {"ativo": {99}})
+    combos.assert_called_once_with(conn, {"ativo": {8}})
 
 
 def test_multi_range_inscriptions_use_one_session_cache(monkeypatch):
@@ -69,6 +72,7 @@ def test_multi_range_inscriptions_use_one_session_cache(monkeypatch):
     monkeypatch.setattr(core_refresh.runner, "run_range", run)
     monkeypatch.setattr(core_refresh, "sync_changed", Mock(return_value={
         "contacts": 0, "installed": False, "enabled": False}))
+    monkeypatch.setattr(core_refresh.combo_attribution, "sync_changed", Mock(return_value=0))
     result = core_refresh.refresh(conn, [("magento", "inscription", 1, 1)])
     assert result == {"orders": 0, "inscriptions": 2}
     prepare.assert_called_once_with(conn)

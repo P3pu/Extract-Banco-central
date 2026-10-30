@@ -4,7 +4,7 @@ from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from src.core import runner
+from src.core import combo_attribution, runner
 from src.core.person_dimension import sync_changed
 
 
@@ -114,6 +114,9 @@ def refresh(conn, pending, assert_control=lambda: None):
           f"installed={int(contacts['installed'])} "
           f"enabled={int(contacts['enabled'])} count={contacts['contacts']}",
           flush=True)
+    assert_control()
+    combos = combo_attribution.sync_changed(conn, orders)
+    print(f"CORE_COMBO_ATRIBUICAO count={combos}", flush=True)
     assert_control()
     # A view deve permanecer fechada mesmo após todos os UPSERTs.
     if conn.execute(

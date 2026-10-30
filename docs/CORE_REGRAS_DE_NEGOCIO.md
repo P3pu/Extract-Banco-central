@@ -79,7 +79,13 @@ combo, com protocolo `<id_pedido Ativo>-<n>` e um bundle `<EVENTO>COMBO<n>`.
 Um pedido Ativo pode ter vários combos; `sa_pedido.id_combo` guarda só um.
 O Ativo é a origem oficial (decisão de 30/10/2026): inscrições Magento desses
 protocolos ficam com `contabiliza_inscricao=false` e motivo
-`COMBO_MIGRADO_ATIVO`, sem dupla contagem.
+`COMBO_MIGRADO_ATIVO`, sem dupla contagem. Cada pedido migrado é uma prova de um combo; o
+prefixo do SKU até `COMBO<n>` identifica o combo (`dim_combo` origem
+`magento`). A inscrição Ativo do mesmo pedido e do mesmo evento, em casamento
+1:1, é gravada em `combo_inscricao_atribuicao` com `grupo_comercial_id =
+<id_pedido Ativo>:<combo>` (`sql/core/v1/015_combo_atribuicao_migrados.sql`).
+A automação recalcula os pedidos alterados; `python -m
+src.core.combo_attribution --approve-production` preenche o histórico.
 
 Eventos nascem separados por `(origem, ID)`. A unificação entre origens só
 existe por vínculo validado: o evento Magento passa a apontar para o
