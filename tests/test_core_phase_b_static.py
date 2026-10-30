@@ -117,10 +117,12 @@ class CorePhaseBStaticTests(unittest.TestCase):
         self.assertIn("i.usuario_id::BIGINT AS participante_id_origem", branches[0])
         self.assertIn("NULL::BIGINT, NULL::BIGINT, i.data_evento::DATE", branches[1])
 
-    def test_ativo_buyer_is_null_until_source_exists(self):
+    def test_proposed_ativo_buyer_never_uses_participant(self):
+        # A STAGING v1 expõe o comprador de sa_pedido (30/10/2026); a proposta
+        # antiga segue sem usar o participante como comprador.
         ativo_view = (ROOT / "sql" / "staging" / "ativo" /
                       "200_ativo_pedido.sql").read_text(encoding="utf-8")
-        self.assertNotIn("comprador_usuario_id", ativo_view)
+        self.assertIn("p.id_usuario AS comprador_usuario_id", ativo_view)
         ativo_upsert = read("003_core_upserts.sql").split("-- ETAPA 2B:", 1)[1]
         self.assertIn("p.codigo, NULL::BIGINT", ativo_upsert)
         self.assertNotIn("p.comprador_usuario_id", ativo_upsert)

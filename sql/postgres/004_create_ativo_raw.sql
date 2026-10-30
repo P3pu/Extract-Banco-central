@@ -3,6 +3,7 @@
 CREATE TABLE IF NOT EXISTS raw.ativo_pedido (
     id_pedido INTEGER PRIMARY KEY,
     id_pedido_status INTEGER NOT NULL,
+    id_usuario INTEGER NOT NULL,
     id_combo BIGINT,
     id_cupom_desconto_item INTEGER,
     ds_cod VARCHAR(25),

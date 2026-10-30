@@ -138,3 +138,28 @@ def test_complement_cli_routes_modes():
     assert [call.kwargs["entity"] for call in run.call_args_list] == [
         "pedido_produto", "pedido_endereco", "pedido_endereco", "pedido_produto"]
     assert run.call_args_list[-1].args[1] == "SNAPSHOT"
+
+
+def test_coupon_header_contract_accepts_new_enum_values():
+    contract = complementos.cupom_desconto
+    columns = [{"COLUMN_NAME": "id_cupom_desconto", "COLUMN_TYPE": "int(10) unsigned",
+                "IS_NULLABLE": "NO"},
+               {"COLUMN_NAME": "en_cupom_classificacao",
+                "COLUMN_TYPE": "enum('Grupos','Parceiros','Valor novo')", "IS_NULLABLE": "YES"}]
+    indexes = [{"INDEX_NAME": "PRIMARY", "COLUMN_NAME": contract.PK, "SEQ_IN_INDEX": 1}]
+    contract.validate_schema(columns, indexes)
+    assert contract.FIELDS["en_cupom_classificacao"][1] == "TEXT"
+    columns[1]["COLUMN_TYPE"] = "varchar(50)"
+    with pytest.raises(ValueError, match="en_cupom_classificacao"):
+        contract.validate_schema(columns, indexes)
+
+
+def test_coupon_header_is_daily_snapshot_only():
+    with patch("src.main.Settings.load"), \
+         patch("src.pipeline.ativo_complementos.run") as run:
+        assert main(["snapshot", "--source", "ativo", "--entity", "cupom_desconto"]) == 0
+    assert run.call_args.kwargs["entity"] == "cupom_desconto"
+    assert run.call_args.args[1] == "SNAPSHOT"
+    with pytest.raises(ValueError):
+        ativo_complementos.run(MagicMock(batch_size=10, reconciliation_days=30),
+                               "INCREMENTAL", entity="cupom_desconto")

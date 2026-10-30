@@ -1,4 +1,4 @@
-"""Itens de produto e endereços Ativo, com paginação por PK e carga transacional."""
+"""Itens de produto, endereços e cabeçalhos de cupom Ativo, com paginação por PK e carga transacional."""
 
 import json
 from datetime import datetime, timezone
@@ -18,7 +18,10 @@ ENTITIES = {
                        "021_create_ativo_pedido_produto_raw.sql"),
     "pedido_endereco": (complementos.pedido_endereco, 7248319319,
                         "022_create_ativo_pedido_endereco_raw.sql"),
+    "cupom_desconto": (complementos.cupom_desconto, 7248319321,
+                       "038_create_ativo_cupom_desconto_raw.sql"),
 }
+SNAPSHOT_ENTITIES = {"pedido_produto", "cupom_desconto"}
 
 
 def log(event, entity, **fields):
@@ -83,7 +86,8 @@ def run(settings, mode, batch_size=None, days=None, entity="pedido_produto"):
     batch_size = settings.batch_size if batch_size is None else batch_size
     days = settings.reconciliation_days if days is None else days
     allowed = {"pedido_produto": {"FULL", "INCREMENTAL", "SNAPSHOT"},
-               "pedido_endereco": {"FULL", "INCREMENTAL", "RECONCILIATION"}}
+               "pedido_endereco": {"FULL", "INCREMENTAL", "RECONCILIATION"},
+               "cupom_desconto": {"FULL", "SNAPSHOT"}}
     if entity not in allowed or mode not in allowed[entity] or batch_size <= 0 or days <= 0:
         raise ValueError("Modo, lote ou entidade inválidos")
     batch_id = uuid4()
@@ -113,7 +117,7 @@ def run(settings, mode, batch_size=None, days=None, entity="pedido_produto"):
                                          reader.indexes(database, contract.TABLE))
                 newest = load(connection, reader, mode, batch_size, batch_id,
                               old, days, progress, entity)
-            strategy = "pk+snapshot" if entity == "pedido_produto" else "pk+reconciliation"
+            strategy = "pk+snapshot" if entity in SNAPSHOT_ENTITIES else "pk+reconciliation"
             connection.execute(
                 "INSERT INTO raw._etl_watermark (pipeline_name,source_system,source_table,strategy,"
                 "watermark_column,watermark_value,last_success_at) VALUES (%s,%s,%s,%s,"

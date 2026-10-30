@@ -4,6 +4,9 @@ PK = "id_pedido"
 FIELDS = {
     "id_pedido": ("int(11)", "INTEGER", False),
     "id_pedido_status": ("int(11)", "INTEGER", False),
+    # Comprador do pedido (sa_usuario), conferido em 30/10/2026. Na RAW desde a
+    # migração 039; pedidos antigos são preenchidos por ativo_pedido_usuario.
+    "id_usuario": ("int(11)", "INTEGER", False),
     "id_combo": ("int(10) unsigned", "BIGINT", True),
     "id_cupom_desconto_item": ("int(11)", "INTEGER", True),
     "ds_cod": ("varchar(25)", "VARCHAR(25)", True),

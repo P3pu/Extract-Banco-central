@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from uuid import UUID, uuid4
 
@@ -113,3 +114,16 @@ def test_cli_dispatches_ativo_and_reconcile():
     assert run.call_args_list[0].args[1] == "INCREMENTAL"
     assert run.call_args_list[1].args[1] == "RECONCILIATION"
     assert run.call_args_list[1].args[3] == 7
+
+
+def test_order_buyer_is_extracted_and_backfill_sets_not_null_last():
+    from src.pipeline import ativo_pedido_usuario
+    assert pedido.FIELDS["id_usuario"] == ("int(11)", "INTEGER", False)
+    query, params = ativo_pedido_usuario.page_query(100, 900, 10)
+    assert "FORCE INDEX (PRIMARY)" in query and "ORDER BY id_pedido" in query
+    assert params == (10, 900, 100)
+    source = Path(ativo_pedido_usuario.__file__).read_text(encoding="utf-8")
+    assert source.index("SET NOT NULL") > source.index("sem comprador na origem")
+    migration = ativo_pedido_usuario.MIGRATION.read_text(encoding="utf-8")
+    assert "ADD COLUMN IF NOT EXISTS id_usuario INTEGER;" in migration
+    assert "NOT NULL" not in migration.split("ALTER TABLE", 1)[1]

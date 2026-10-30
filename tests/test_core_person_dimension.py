@@ -197,3 +197,48 @@ def test_today_export_reads_only_core_and_keeps_null_contacts():
     assert "core.fato_inscricao" in lower
     assert "staging." not in lower and "raw." not in lower
     assert 'AS "Nome"' in sql and 'AS "E-mail"' in sql and 'AS "CPF"' in sql
+
+
+def test_wrong_hmac_key_is_refused_before_any_write():
+    good, bad = bytes(32), bytes([1]) * 32
+    digits = "52998224725"
+    conn = Mock()
+    conn.execute.return_value.fetchall.return_value = [
+        ("529.982.247-25", person_dimension._cpf_token(digits, good))]
+    person_dimension._verify_key(conn, good)
+    with pytest.raises(RuntimeError, match="diverge dos tokens"):
+        person_dimension._verify_key(conn, bad)
+
+
+def test_key_rotation_recomputes_tokens_from_stored_cpf():
+    new_key = bytes([7]) * 32
+    stored = [(1, "529.982.247-25"), (2, "111.444.777-35")]
+    written = []
+    conn = MagicMock()
+
+    def execute(query, params=None):
+        result = MagicMock()
+        if "SELECT pessoa_key,cpf" in query:
+            result.fetchall.return_value = stored
+        elif "SELECT cpf,cpf_token_seguro" in query:
+            result.fetchall.return_value = [
+                (cpf, person_dimension._cpf_token(
+                    person_dimension._valid_cpf(cpf), new_key)) for _, cpf in stored]
+        elif query.lstrip().startswith("UPDATE core.dim_pessoa"):
+            result.rowcount = len(written)
+        return result
+
+    conn.execute.side_effect = execute
+    conn.cursor.return_value.copy.return_value.__enter__.return_value.write_row = written.append
+    assert person_dimension.rotate_key(conn, new_key) == 2
+    assert {key for key, _ in written} == {1, 2}
+    assert all(len(token) == 32 for _, token in written)
+    assert any("LOCK TABLE core.dim_pessoa" in call.args[0]
+               for call in conn.execute.call_args_list)
+
+
+def test_key_rotation_refuses_validated_person_without_cpf():
+    conn = MagicMock()
+    conn.execute.return_value.fetchall.return_value = [(1, None)]
+    with pytest.raises(RuntimeError, match="revisão necessária"):
+        person_dimension.rotate_key(conn, bytes(32))

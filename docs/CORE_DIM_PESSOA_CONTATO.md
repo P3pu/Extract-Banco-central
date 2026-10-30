@@ -35,8 +35,10 @@ O sincronizador usa somente vínculos comprovados:
   participante de bundle com associação não ambígua → mesmo cadastro.
 - Ativo: `fato_inscricao.participante_id_origem` e seu namespace `Usuario` ou
   `UsuarioBalcao` → respectivo cadastro STAGING.
-- Comprador Ativo **não** é preenchido: o pedido ainda não possui vínculo
-  confiável com o pagador. Não atribuir o CPF do participante ao comprador.
+- Ativo comprador: `fato_pedido.comprador_id_origem` (`sa_pedido.id_usuario`,
+  desde 30/10/2026) → `staging.ativo_usuario`, namespace `Usuario`. Nunca usa
+  o participante como comprador. A mesma pessoa (mesmo CPF) que compra para si
+  e aparece em pedidos de outros compradores fica com papel `AMBOS`.
 
 O sincronizador verifica os dígitos do CPF. Para CPF válido, calcula HMAC-SHA256
 com segredo externo e usa o índice único de `cpf_token_seguro` para reutilizar
@@ -60,6 +62,28 @@ Manter o mesmo segredo em todas as execuções; rotação exige procedimento
 próprio para recalcular os tokens. Sem a chave, a sincronização de CPFs válidos
 falha antes de gravar dados ou avançar o diário de alterações. Não registrar
 o segredo em Git, argumentos de linha de comando ou logs.
+
+## Rotação da chave (30/10/2026)
+
+A chave usada no backfill de 27/10 não foi localizada. Decisão: gerar uma
+chave nova e recalcular os tokens a partir do CPF guardado na `dim_pessoa`
+(3.040 CPFs validados, todos recalculáveis, sem repetição). `pessoa_key`,
+`pessoa_source_map` e os fatos não mudam. No servidor a chave fica em
+`/var/lib/bcd/core-person-hmac.key` (`BCD_STATE_DIR`), dono `bcd`, modo 0400,
+fora da release. Gerar sem exibir o conteúdo:
+
+```bash
+sudo -u bcd sh -c 'umask 077; test ! -e /var/lib/bcd/core-person-hmac.key &&
+  python3 -c "import secrets;print(secrets.token_hex(32))" > /var/lib/bcd/core-person-hmac.key &&
+  chmod 0400 /var/lib/bcd/core-person-hmac.key'
+```
+
+Depois, com a automação parada e `CORE_PII_APPROVAL=DIM_PESSOA_PII_APPROVED`:
+`python -m src.core.person_dimension rotate-key --approve-production`. A rotação
+é uma transação única e confere o resultado antes do COMMIT. Guardar uma cópia
+da chave em cofre: sem ela, nova rotação será necessária. A sincronização
+compara a chave com os tokens gravados e recusa chave divergente
+(`Chave HMAC diverge dos tokens gravados`), evitando pessoas duplicadas.
 
 ## Aplicação controlada
 

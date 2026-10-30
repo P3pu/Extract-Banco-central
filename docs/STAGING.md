@@ -87,6 +87,7 @@ conservadora e deve ser reavaliada se a semântica dos links mudar.
 | `ativo_pais` | `raw.ativo_pais` | Um país (`pais_id`) | Sem JOIN geográfico. |
 | `ativo_combo` | `raw.ativo_combo` | Um combo (`combo_id`) | Nome semântico simples. |
 | `ativo_cupom` | `raw.ativo_cupom_desconto_item` | Um cupom individual (`cupom_id`) | Só colunas existentes; herda cobertura inicial seletiva da RAW, sem histórico completo. |
+| `ativo_cupom_desconto` | `raw.ativo_cupom_desconto` | Um cabeçalho de cupom (`cupom_desconto_id`) | Snapshot diário de `sa_cupom_desconto`; `classificacao` é o ENUM de origem, vazio vira NULL. |
 | `ativo_inscricao` | `raw.ativo_pedido_evento` LEFT JOIN pedido, evento, modalidade, categoria, tamanho | Uma inscrição (`inscricao_id`) | IDs originais e descrições separados. Flags `pedido_mapeado`, `evento_mapeado`, `modalidade_mapeada`, `categoria_mapeada`, `tamanho_camiseta_mapeado` só são verdadeiras quando a referência existe; ID nulo conta como não mapeado. Órfãos, TESTE DEV e cancelados permanecem. Sem join 1:N a pagamentos, transações, produtos ou endereços; sem cálculo de valor líquido. |
 
 `ativo_inscricao` pode conter referências históricas órfãs. Isso é informação de

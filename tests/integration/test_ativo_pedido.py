@@ -27,7 +27,7 @@ def test_zero_dates_copy_upsert_and_rollback():
         conn.execute(ddl.replace("CREATE TABLE IF NOT EXISTS raw.ativo_pedido", "CREATE TEMP TABLE integration_pedido"))
         target = ("pg_temp", "integration_pedido")
         loader.prepare(conn, target)
-        values = dict(id_pedido=5, id_pedido_status=1, dt_pedido="0000-00-00 00:00:00",
+        values = dict(id_pedido=5, id_pedido_status=1, id_usuario=7, dt_pedido="0000-00-00 00:00:00",
                       dt_alteracao="0000-00-00 00:00:00", nr_desconto=Decimal("0.00"))
         row = tuple(values.get(n) for n in pedido.COLUMNS)
         batch_id = uuid4()

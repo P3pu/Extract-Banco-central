@@ -20,11 +20,11 @@
 | `valor_total_cobrado` | Pedido Magento | `grand_total`; residual não rotulado como taxa. |
 | `desconto_itens_identificado`/`desconto_nao_atribuido` | Pedido Magento | Soma priorizada filhos/pai; diferença para módulo do desconto cabeçalho. |
 | `valor_bruto_inscricao` | Inscrição | Ativo `preco`; Magento bundle pai `valor_bruto` original. |
-| `desconto_individual_origem` | Inscrição Ativo | `try_numeric_20_4(desconto_individual)`; texto inválido vira NULL com alerta. |
+| `desconto_individual_origem` | Inscrição Ativo | `try_numeric_20_4(desconto_individual)`; NULL ou vazio na origem vira 0 (sem desconto); texto inválido vira NULL com alerta. |
 | `valor_kit_ativo` | Inscrição Ativo | `staging.ativo_categoria.valor_kit` por categoria ID. |
 | `taxa_servico_ativo` | Inscrição Ativo | `staging.ativo_inscricao.taxa`; não é kit nem receita própria. |
 | `valor_liquido_inscricao` | Inscrição | Ativo `GREATEST(0,preço-desconto-kit)` válido; Magento somente quando cabeçalho/itens e quantidade conciliados. |
-| `classificacao_comercial` | Inscrição | GRUPOS > CORTESIA > SITE; NULL para cupom Ativo com classificação de cabeçalho ausente. |
+| `classificacao_comercial` | Inscrição | GRUPOS > CORTESIA > SITE; cupom sem classificação não deixa pendente. |
 | `participante_id_origem` + `participante_namespace_origem` | Inscrição Ativo | Um único `usuario_id` ou `usuario_balcao_id`; ambos => NULL. Magento NULL. |
 | `combo_key` | Inscrição Ativo | Combo do pedido se mapeado; não prova composição. |
 | `conteudo_hash` | Pedido/inscrição | Alterações no conjunto básico de atributos selecionados. |

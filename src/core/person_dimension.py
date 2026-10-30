@@ -182,6 +182,54 @@ def _cpf_token(digits, key):
                     hashlib.sha256).digest()
 
 
+def _verify_key(conn, key, sample=100):
+    """Recusa chave diferente da que gerou os tokens gravados (evita duplicar pessoas)."""
+    rows = conn.execute("""
+        SELECT cpf,cpf_token_seguro FROM core.dim_pessoa
+        WHERE criterio_identificacao='CPF_VALIDO' ORDER BY pessoa_key LIMIT %s
+    """, (sample,)).fetchall()
+    for cpf, token in rows:
+        digits = _valid_cpf(cpf)
+        if digits is None or not hmac.compare_digest(_cpf_token(digits, key), bytes(token)):
+            raise RuntimeError("Chave HMAC diverge dos tokens gravados")
+
+
+def rotate_key(conn, key):
+    """Recalcula todos os tokens de CPF com a chave atual, numa transação.
+
+    Usa o CPF guardado na própria dim_pessoa; pessoa_key e vínculos não mudam.
+    """
+    with conn.transaction():
+        conn.execute("LOCK TABLE core.dim_pessoa IN SHARE ROW EXCLUSIVE MODE")
+        rows = conn.execute("""
+            SELECT pessoa_key,cpf FROM core.dim_pessoa
+            WHERE criterio_identificacao='CPF_VALIDO'
+        """).fetchall()
+        tokens = {}
+        for person_key, cpf in rows:
+            digits = _valid_cpf(cpf)
+            if digits is None:
+                raise RuntimeError("CPF validado ausente ou vínculo compartilhado; revisão necessária")
+            tokens[person_key] = _cpf_token(digits, key)
+        if len(set(tokens.values())) != len(tokens):
+            raise RuntimeError("Token de CPF existente divergente")
+        conn.execute("CREATE TEMP TABLE core_person_rotation "
+                     "(pessoa_key BIGINT PRIMARY KEY, token BYTEA NOT NULL) ON COMMIT DROP")
+        with conn.cursor().copy("COPY pg_temp.core_person_rotation FROM STDIN") as copy:
+            for row in tokens.items():
+                copy.write_row(row)
+        # Chave nova é independente da antiga: colisão de 256 bits com um
+        # token antigo não é um cenário real; o índice único recusaria.
+        updated = conn.execute("""
+            UPDATE core.dim_pessoa d SET cpf_token_seguro=r.token
+            FROM pg_temp.core_person_rotation r WHERE d.pessoa_key=r.pessoa_key
+        """).rowcount
+        if updated != len(tokens):
+            raise RuntimeError("Rotação parcial da chave HMAC")
+        _verify_key(conn, key)
+    return updated
+
+
 def _merge_role(current, incoming):
     if current is None or current == incoming:
         return incoming
@@ -211,6 +259,21 @@ def _source_profiles(conn, orders, inscriptions):
             JOIN staging.magento_cliente c ON c.cliente_id=p.comprador_id_origem
             WHERE p.origem='magento' AND p.pedido_id_origem=ANY(%s::bigint[])
               AND c.cliente_id>0
+        """, (ids,)).fetchall()
+        for row in rows:
+            add(row)
+
+    # Comprador Ativo = usuário do pedido. A mesma pessoa pode ser
+    # participante de outros pedidos; o CPF une os papéis (AMBOS).
+    for ids in _chunks(orders.get("ativo", ())):
+        rows = conn.execute("""
+            SELECT DISTINCT 'ativo','Usuario',u.usuario_id,u.documento,
+                   NULLIF(BTRIM(CONCAT_WS(' ',u.nome,u.sobrenome)),''),
+                   u.email,'COMPRADOR'
+            FROM core.fato_pedido p
+            JOIN staging.ativo_usuario u ON u.usuario_id=p.comprador_id_origem
+            WHERE p.origem='ativo' AND p.pedido_id_origem=ANY(%s::bigint[])
+              AND u.usuario_id>0
         """, (ids,)).fetchall()
         for row in rows:
             add(row)
@@ -501,6 +564,8 @@ def sync_changed(conn, orders, inscriptions) -> dict[str, int | bool]:
         conn, orders, inscriptions)
     hmac_key = _hmac_key() if any(_valid_cpf(contact[0])
                                   for contact in profiles.values()) else None
+    if hmac_key is not None:
+        _verify_key(conn, hmac_key)
     _bulk_upsert_profiles(conn, profiles, hmac_key)
 
     for ids in _chunks(orders.get("magento", ())):
@@ -509,6 +574,15 @@ def sync_changed(conn, orders, inscriptions) -> dict[str, int | bool]:
             FROM core.pessoa_source_map m
             WHERE p.origem='magento' AND p.pedido_id_origem=ANY(%s::bigint[])
               AND m.origem='magento' AND m.tipo_identificador='Customer'
+              AND m.id_pessoa_origem=p.comprador_id_origem
+              AND p.comprador_key IS DISTINCT FROM m.pessoa_key
+        """, (ids,))
+    for ids in _chunks(orders.get("ativo", ())):
+        conn.execute("""
+            UPDATE core.fato_pedido p SET comprador_key=m.pessoa_key
+            FROM core.pessoa_source_map m
+            WHERE p.origem='ativo' AND p.pedido_id_origem=ANY(%s::bigint[])
+              AND m.origem='ativo' AND m.tipo_identificador='Usuario'
               AND m.id_pessoa_origem=p.comprador_id_origem
               AND p.comprador_key IS DISTINCT FROM m.pessoa_key
         """, (ids,))
@@ -610,7 +684,8 @@ def plan_since(conn, since: date) -> dict[str, tuple[float, int]]:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Contatos restritos da dim_pessoa")
-    parser.add_argument("command", choices=("inspect", "plan", "migrate", "backfill"))
+    parser.add_argument("command", choices=("inspect", "plan", "migrate", "backfill",
+                                            "rotate-key"))
     parser.add_argument("--since", type=date.fromisoformat)
     parser.add_argument("--until", type=date.fromisoformat,
                         help="Fim exclusivo do período de backfill")
@@ -722,6 +797,9 @@ def main(argv=None) -> int:
                     if args.command == "migrate":
                         print("CORE_PERSON_DIM_MIGRATION "
                               f"applied={int(apply_migration(conn))}")
+                    elif args.command == "rotate-key":
+                        print("CORE_PERSON_KEY_ROTATED "
+                              f"persons={rotate_key(conn, _hmac_key())}")
                     else:
                         since = args.since or datetime.now(
                             ZoneInfo("America/Sao_Paulo")).date()
@@ -757,6 +835,9 @@ def main(argv=None) -> int:
             "Vínculo de CPF divergente; revisão necessária",
             "CPF validado ausente ou vínculo compartilhado; revisão necessária",
             "SCHEMA_DIVERGENTE: cadastro de origem ambíguo",
+            "Chave HMAC diverge dos tokens gravados",
+            "Rotação parcial da chave HMAC",
+            "Chave HMAC de CPF não provisionada",
         }
         reason = str(exc) if type(exc) is RuntimeError and (
             str(exc) in safe_reasons or str(exc).startswith("cannot ")
