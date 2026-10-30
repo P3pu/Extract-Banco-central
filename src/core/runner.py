@@ -48,7 +48,7 @@ REQUIRED = {
     "staging.ativo_pedido": {"pedido_id": "int", "status_id": "int",
                              "comprador_usuario_id": "int"},
     "staging.magento_pedido": {"pedido_id": "int", "subtotal": "numeric",
-                                "desconto": "numeric"},
+                                "desconto": "numeric", "protocolo": "text"},
     "staging.ativo_inscricao": {"inscricao_id": "int", "pedido_id": "int",
                                  "preco": "numeric", "desconto_individual": "text"},
     "staging.magento_inscricao": {"inscricao_id": "int", "pedido_id": "int",

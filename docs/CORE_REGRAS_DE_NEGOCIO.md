@@ -74,6 +74,13 @@ demais classificações são só informativas. Magento aceita prefixo GR e etiqu
 regras; categoria numérica não é tratada como texto. Cortesia usa categoria,
 etiqueta ou bruto zero somente na ausência de sinal de grupos.
 
+Combos são vendidos no Ativo e migrados para o Magento como um pedido por
+combo, com protocolo `<id_pedido Ativo>-<n>` e um bundle `<EVENTO>COMBO<n>`.
+Um pedido Ativo pode ter vários combos; `sa_pedido.id_combo` guarda só um.
+O Ativo é a origem oficial (decisão de 30/10/2026): inscrições Magento desses
+protocolos ficam com `contabiliza_inscricao=false` e motivo
+`COMBO_MIGRADO_ATIVO`, sem dupla contagem.
+
 Eventos nascem separados por `(origem, ID)`. A unificação entre origens só
 existe por vínculo validado: o evento Magento passa a apontar para o
 `evento_key` do evento Ativo em `core.evento_source_map`

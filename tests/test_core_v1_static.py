@@ -242,3 +242,14 @@ def test_ativo_coupon_classified_grupos_is_grupos():
     assert "COALESCE(cd_ind.classificacao, cd_ped.classificacao)='Grupos'" in ativo
     assert "OR COALESCE(cupom_classificacao_grupos,false)) sinal_grupos" in ativo
     assert "'CUPOM_CLASSIFICACAO_GRUPOS'" in ativo
+
+
+def test_magento_combo_migrated_from_ativo_is_not_counted():
+    mag = (SQL / "041_inscricao_magento.sql").read_text(encoding="utf-8")
+    assert "p.protocolo ~ '^[0-9]{9}-[0-9]{1,2}$'" in mag
+    assert "contabiliza_inscricao=CASE WHEN d.combo_migrado_ativo THEN false" in mag
+    assert "THEN 'COMBO_MIGRADO_ATIVO'" in mag
+    # Só os combos ainda não marcados são regravados; o hash não muda.
+    assert "f.motivo_elegibilidade IS DISTINCT FROM 'COMBO_MIGRADO_ATIVO'" in mag
+    assert "combo_migrado_ativo" not in mag.split("dep_hash", 1)[0].split("md5(ROW(", 1)[1]
+    assert runner.REQUIRED["staging.magento_pedido"]["protocolo"] == "text"
