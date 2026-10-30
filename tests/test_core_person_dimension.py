@@ -242,3 +242,10 @@ def test_key_rotation_refuses_validated_person_without_cpf():
     conn.execute.return_value.fetchall.return_value = [(1, None)]
     with pytest.raises(RuntimeError, match="revisão necessária"):
         person_dimension.rotate_key(conn, bytes(32))
+
+
+def test_server_automation_keeps_pii_gate_open_with_state_dir_key():
+    unit = (Path(__file__).resolve().parents[1]
+            / "deploy/server/bcd-raw-core.service").read_text(encoding="utf-8")
+    assert "Environment=CORE_PII_ENABLE_SYNC=approved" in unit
+    assert "Environment=BCD_STATE_DIR=/var/lib/bcd" in unit
