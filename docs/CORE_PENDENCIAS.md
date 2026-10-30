@@ -1,12 +1,14 @@
 # CORE V1 — pendências reais
 
-1. `sa_cupom_desconto.en_cupom_classificacao` não está na STAGING. Sem esse
-   atributo, cupons Ativo não-GR podem permanecer com classificação NULL;
-   não inferir Grupos de outras classificações.
+1. Resolvido em 30/10/2026: `sa_cupom_desconto.en_cupom_classificacao` entra
+   na STAGING (`staging.ativo_cupom_desconto`, snapshot diário); `Grupos`
+   define GRUPOS, as demais são informativas; cupom sem classificação não
+   deixa a inscrição pendente.
 2. Descrição de `id_status_detalhado` não integrada à STAGING. Códigos
    especiais ficam pendentes, sem rótulo inventado.
-3. Comprador Ativo ausente da view de pedidos; não atribuir o CPF do
-   participante ao comprador. A política CPF/HMAC e a vinculação entre origens
+3. Comprador Ativo: `sa_pedido.id_usuario` entra na RAW (migração 039 e
+   `src.pipeline.ativo_pedido_usuario` para o histórico) e em
+   `staging.ativo_pedido.comprador_usuario_id`. A política CPF/HMAC e a vinculação entre origens
    foram implementadas na migração 008 (`docs/CORE_DIM_PESSOA_CONTATO.md`),
    mas o preenchimento segue atrás do gate `CORE_PII_ENABLE_SYNC` e o backfill
    histórico desde 01/01/2026 aguarda aprovação de volume.

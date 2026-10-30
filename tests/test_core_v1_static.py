@@ -9,7 +9,8 @@ import pytest
 from src.core import runner
 
 
-SQL = Path(__file__).resolve().parents[1] / "sql/core/v1"
+ROOT = Path(__file__).resolve().parents[1]
+SQL = ROOT / "sql/core/v1"
 
 
 @pytest.mark.parametrize("scope", runner.STEPS)
@@ -151,7 +152,17 @@ def test_ativo_tax_and_kit_are_distinct():
     assert "taxa_servico_ativo=d.taxa" in ativo
     assert "valor_kit_ativo=d.valor_kit" in ativo
     assert "GREATEST(0,d.preco-d.desconto_num-d.valor_kit)" in ativo
-    assert "classificacao_cupom_ativo=NULL" in ativo
+    assert "classificacao_cupom_ativo=d.classificacao_cupom" in ativo
+
+
+def test_ativo_null_discount_means_zero():
+    ativo = (SQL / "040_inscricao_ativo.sql").read_text(encoding="utf-8")
+    assert "WHEN NULLIF(BTRIM(i.desconto_individual),'') IS NULL" in ativo
+    # Texto inválido continua NULL e mantém o financeiro pendente.
+    assert "ELSE core.try_numeric_20_4(i.desconto_individual) END desconto_num" in ativo
+    assert "desconto_num IS NULL" in ativo
+    # Versão nova força a rederivação das inscrições já derivadas.
+    assert ativo.count("'CORE_V1_20261030'") == 3
 
 
 def test_invalidation_and_dependency_hash_cover_auxiliary_sources():
@@ -202,3 +213,32 @@ def test_failure_is_audited_and_never_marked_success(monkeypatch):
     statements = [str(call.args[0]) for call in conn.execute.call_args_list]
     assert any("status='FAILED'" in query for query in statements)
     assert not any("status='SUCCEEDED'" in query for query in statements)
+
+
+def test_ativo_coupon_never_blocks_classification():
+    ativo = (SQL / "040_inscricao_ativo.sql").read_text(encoding="utf-8")
+    assert "classificacao_pendente" not in ativo
+    assert "CUPOM_HEADER_AUSENTE" not in ativo
+    assert "classificacao_incompleta=false" in ativo
+    assert "staging.ativo_cupom_desconto cd_ind" in ativo
+    assert "staging.ativo_cupom_desconto cd_ped" in ativo
+    view = (ROOT / "sql/staging/ativo/365_ativo_cupom_desconto.sql").read_text(encoding="utf-8")
+    assert "NULLIF(BTRIM(en_cupom_classificacao), '') AS classificacao" in view
+
+
+def test_ativo_buyer_comes_from_order_user():
+    pedido_sql = (SQL / "021_pedido_ativo.sql").read_text(encoding="utf-8")
+    assert "comprador_usuario_id::bigint" in pedido_sql
+    assert "comprador_id_origem=EXCLUDED.comprador_id_origem" in pedido_sql
+    assert "p.comprador_usuario_id)::text) hash_novo" in pedido_sql
+    assert "usuario_id" not in pedido_sql.replace("comprador_usuario_id", "")
+    person = (ROOT / "src/core/person_dimension.py").read_text(encoding="utf-8")
+    assert "JOIN staging.ativo_usuario u ON u.usuario_id=p.comprador_id_origem" in person
+    assert "WHERE p.origem='ativo' AND p.pedido_id_origem=ANY(%s::bigint[])" in person
+
+
+def test_ativo_coupon_classified_grupos_is_grupos():
+    ativo = (SQL / "040_inscricao_ativo.sql").read_text(encoding="utf-8")
+    assert "COALESCE(cd_ind.classificacao, cd_ped.classificacao)='Grupos'" in ativo
+    assert "OR COALESCE(cupom_classificacao_grupos,false)) sinal_grupos" in ativo
+    assert "'CUPOM_CLASSIFICACAO_GRUPOS'" in ativo

@@ -91,7 +91,7 @@ def test_snapshot_cli_routes_evento():
     assert run.call_count == count + 1
     assert run.call_args_list[count].args[1] == 500
     assert run.call_args_list[count].kwargs["entity"] == "evento"
-    assert product_run.call_count == 1
+    assert [c.kwargs["entity"] for c in product_run.call_args_list] == ["pedido_produto", "cupom_desconto"]
     assert product_run.call_args.args[1] == "SNAPSHOT"
 
 

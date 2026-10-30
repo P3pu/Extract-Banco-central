@@ -1,6 +1,6 @@
 # CORE V1 — regras implementadas
 
-Versão das regras: `CORE_V1_20261022`. A CORE está carregada no `Atendimento`
+Versão das regras: `CORE_V1_20261022` (inscrições Ativo: `CORE_V1_20261030`). A CORE está carregada no `Atendimento`
 desde 23/10/2026 (migrações 001, 002, 006, 007 e 008) e é mantida pela
 automação local horária (`docs/AUTOMACAO_LOCAL_RAW_CORE.md`). O executor CORE
 é separado do D1/RAW e lê somente as views STAGING PostgreSQL. A view de
@@ -16,8 +16,10 @@ indicadores `core.fato_inscricao_indicadores_validos` permanece `WHERE FALSE`.
   quando somente um identificador existe. Ambos preenchidos ficam NULL e
   pendentes. `participante_id_origem` Magento fica NULL; a `participante_key`
   Magento só é preenchida pela sincronização de contatos, quando o cliente do
-  bundle não é ambíguo. Comprador Ativo fica NULL e nunca recebe o CPF do participante. Não
-  há união de eventos pelo SKU.
+  bundle não é ambíguo. Comprador Ativo = `sa_pedido.id_usuario` (namespace
+  `Usuario`), desde 30/10/2026; nunca é copiado do participante. Quem compra
+  com o próprio CPF é comprador; se aparece em inscrições de pedidos de outro
+  comprador, é também participante (papel `AMBOS` na `dim_pessoa`).
 - `dim_pessoa` (migração 008): CPF com dígitos válidos vira token HMAC-SHA256 e
   reúne comprador e participante, inclusive entre Magento e Ativo, numa única
   `pessoa_key`. CPF ausente ou inválido gera uma pessoa por ID de origem
@@ -51,6 +53,8 @@ indicadores `core.fato_inscricao_indicadores_validos` permanece `WHERE FALSE`.
   `qty_ordered<>1`, cancelamento parcial ou reembolso deixam líquido
   individual indeterminado. Pedido misto teste/real é sinalizado.
 - Ativo: bruto = `nr_preco`; desconto textual passa por conversão defensiva;
+  desconto NULL ou vazio na origem é produto sem desconto e vale 0 (regras Ativo
+  `CORE_V1_20261030`); texto inválido continua pendente;
   kit = `vl_kit` da categoria; líquido = `GREATEST(0,preco-desconto-kit)`
   somente com todos componentes válidos. Taxa = `nr_taxa` individual,
   segregada do kit e da receita. `preco+taxa` é derivado, não total recebido.
@@ -61,9 +65,12 @@ indicadores `core.fato_inscricao_indicadores_validos` permanece `WHERE FALSE`.
 ## Classificação, eventos e combos
 
 GRUPOS > CORTESIA > SITE. Ativo aceita prefixo GR do cupom e categoria
-`grupo`/`Saúde Corporativa`; o campo de classificação do cabeçalho de cupom
-não está na STAGING e não é simulado. Cupom sem esse atributo e sem sinal GR
-fica com classificação pendente. Magento aceita prefixo GR e etiqueta de
+`grupo`/`Saúde Corporativa`. Cupom não exige classificação própria (decisão de
+negócio 30/10/2026): ter cupom não deixa a inscrição pendente. A classificação
+do cabeçalho (`sa_cupom_desconto.en_cupom_classificacao`, via
+`staging.ativo_cupom_desconto`) fica em `classificacao_cupom_ativo`; o valor
+`Grupos` (individual ou do pedido) classifica a inscrição como GRUPOS. As
+demais classificações são só informativas. Magento aceita prefixo GR e etiqueta de
 regras; categoria numérica não é tratada como texto. Cortesia usa categoria,
 etiqueta ou bruto zero somente na ausência de sinal de grupos.
 

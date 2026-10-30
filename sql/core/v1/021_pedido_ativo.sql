@@ -1,7 +1,8 @@
 WITH fonte AS (
     SELECT p.*,
            md5(ROW(p.pedido_id,p.data_pedido,p.data_alteracao,p.status_id,
-                   p.local_inscricao_codigo,p.desconto)::text) hash_novo
+                   p.local_inscricao_codigo,p.desconto,
+                   p.comprador_usuario_id)::text) hash_novo
     FROM staging.ativo_pedido p
     WHERE p.pedido_id BETWEEN %(id_min)s AND %(id_max)s
 )
@@ -13,7 +14,9 @@ INSERT INTO core.fato_pedido
      pedido_elegivel,pagamento_confirmado,pagamento_considerado,
      motivo_status_analitico,desconto_pedido_origem,batch_id_origem,
      conteudo_hash,flag_excecao_financeira)
-SELECT 'ativo',pedido_id,pedido_id::text,NULL::bigint,
+-- Comprador = usuário que fez o pedido (sa_pedido.id_usuario); pode diferir
+-- dos participantes das inscrições.
+SELECT 'ativo',pedido_id,pedido_id::text,comprador_usuario_id::bigint,
        core.try_timestamp(data_pedido),data_pedido,
        core.try_timestamp(data_alteracao),data_alteracao,
        status,status_id,local_inscricao_codigo,
@@ -36,6 +39,7 @@ SELECT 'ativo',pedido_id,pedido_id::text,NULL::bigint,
 FROM fonte
 ON CONFLICT (origem,pedido_id_origem) DO UPDATE SET
     protocolo=EXCLUDED.protocolo,
+    comprador_id_origem=EXCLUDED.comprador_id_origem,
     data_pedido=EXCLUDED.data_pedido,
     data_pedido_original=EXCLUDED.data_pedido_original,
     data_atualizacao_origem=EXCLUDED.data_atualizacao_origem,

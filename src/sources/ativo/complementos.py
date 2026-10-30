@@ -1,4 +1,4 @@
-"""Campos mínimos de produtos de pedido e endereços, conferidos no Ativo."""
+"""Campos mínimos de produtos de pedido, endereços e cabeçalho de cupom, conferidos no Ativo."""
 
 from dataclasses import dataclass
 
@@ -18,7 +18,11 @@ class ComplementoContract:
         actual = {column["COLUMN_NAME"]: column for column in columns}
         for name, (mysql_type, _, nullable) in self.FIELDS.items():
             column = actual.get(name)
-            if column is None or column["COLUMN_TYPE"].lower() != mysql_type:
+            actual_type = column["COLUMN_TYPE"].lower() if column is not None else None
+            # ENUM: novos valores na origem não quebram a carga; a RAW guarda texto.
+            matches = (actual_type.startswith("enum(") if mysql_type == "enum"
+                       else actual_type == mysql_type) if actual_type else False
+            if not matches:
                 raise ValueError(f"Schema divergente: {self.TABLE}.{name}")
             if (column["IS_NULLABLE"] == "YES") != nullable:
                 raise ValueError(f"Nullabilidade divergente: {self.TABLE}.{name}")
@@ -81,4 +85,13 @@ pedido_endereco = ComplementoContract(
         "ds_bairro": ("varchar(100)", "VARCHAR(100)", False),
         "nr_cep": ("varchar(10)", "VARCHAR(10)", False),
         "dt_cadastro": ("timestamp", "TIMESTAMP", False),
+    })
+
+# Cabeçalho do cupom (26,5 mil linhas em 30/10/2026): snapshot diário completo.
+# A classificação é dado de origem, não regra; vazia ou NULL não gera pendência.
+cupom_desconto = ComplementoContract(
+    TABLE="sa_cupom_desconto", PK="id_cupom_desconto",
+    FIELDS={
+        "id_cupom_desconto": ("int(10) unsigned", "BIGINT", False),
+        "en_cupom_classificacao": ("enum", "TEXT", True),
     })

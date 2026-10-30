@@ -13,6 +13,8 @@ SELECT p.id_pedido AS pedido_id, p.id_pedido_status AS status_id,
        NULLIF(BTRIM(p.nm_camiseta), '') AS nome_camiseta,
        NULLIF(BTRIM(p.ds_campo_apolo), '') AS campo_apolo,
        NULLIF(BTRIM(p.ds_obs), '') AS observacao,
-       p._source AS origem, p._extracted_at AS extraido_em, p._batch_id AS batch_id
+       p._source AS origem, p._extracted_at AS extraido_em, p._batch_id AS batch_id,
+       -- No fim: CREATE OR REPLACE VIEW só aceita colunas novas ao final.
+       p.id_usuario AS comprador_usuario_id
 FROM raw.ativo_pedido p
 LEFT JOIN raw.ativo_pedido_status s ON s.id_pedido_status = p.id_pedido_status;

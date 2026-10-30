@@ -8,7 +8,7 @@ from src.staging_validate import CHECKS, duplicate_queries
 def test_staging_manifest_is_complete_and_ordered():
     assert tuple(PHASES) == (1, 2, 3, 4, 5, 6, 7)
     paths = [path for phase in PHASES.values() for path in phase]
-    assert len(paths) == 32  # schema + 13 views Magento + 18 views Ativo
+    assert len(paths) == 33  # schema + 13 views Magento + 19 views Ativo
     assert len(paths) == len(set(paths))
     assert all((ROOT / "sql" / "staging" / path).is_file() for path in paths)
 
