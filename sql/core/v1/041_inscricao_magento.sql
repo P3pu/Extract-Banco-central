@@ -1,5 +1,7 @@
 -- Derivação por bundle pai. Filhos e regras são pré-agregados; nunca geram
 -- novas inscrições. O cabeçalho permanece a fonte financeira no grão pedido.
+-- Protocolo "<pedido Ativo>-<n>" = combo vendido no Ativo e migrado: o Ativo é
+-- a origem oficial (decisão de negócio 30/10/2026), então não contabiliza aqui.
 WITH filhos AS (
     SELECT c.inscricao_item_id,
            SUM(c.desconto) FILTER (WHERE c.desconto IS NOT NULL) desconto,
@@ -34,6 +36,7 @@ WITH filhos AS (
            p.desconto desconto_cabecalho,
            p.subtotal subtotal_cabecalho,
            p.valor_total total_cabecalho,
+           COALESCE(p.protocolo ~ '^[0-9]{9}-[0-9]{1,2}$',false) combo_migrado_ativo,
            core.magento_status_corporativo(i.estado_pedido,i.status_pedido)
              status_analitico
     FROM core.fato_inscricao f
@@ -113,7 +116,8 @@ UPDATE core.fato_inscricao f SET
         WHEN d.quantidade_pedida>0
          AND d.quantidade_cancelada>=d.quantidade_pedida THEN true
         WHEN d.quantidade_cancelada IS NOT NULL THEN false END,
-    contabiliza_inscricao=CASE WHEN d.status_analitico='CANCELADO'
+    contabiliza_inscricao=CASE WHEN d.combo_migrado_ativo THEN false
+        WHEN d.status_analitico='CANCELADO'
         OR (d.quantidade_pedida>0
             AND d.quantidade_cancelada>=d.quantidade_pedida) THEN false
         WHEN d.qtd_ambigua OR d.flag_evento_nao_mapeado
@@ -121,7 +125,8 @@ UPDATE core.fato_inscricao f SET
           OR d.flag_evento_teste IS DISTINCT FROM false
           OR d.status_analitico='INDETERMINADO' THEN NULL
         ELSE true END,
-    contabiliza_bruto=CASE WHEN d.status_analitico='CANCELADO' THEN false
+    contabiliza_bruto=CASE WHEN d.combo_migrado_ativo
+        OR d.status_analitico='CANCELADO' THEN false
         WHEN d.qtd_segura AND d.bruto_atribuivel IS NOT NULL
           AND d.flag_evento_teste IS FALSE THEN true END,
     pagamento_confirmado=CASE WHEN d.status_analitico='CONFIRMADO' THEN true
@@ -132,7 +137,9 @@ UPDATE core.fato_inscricao f SET
     pago_considerado=CASE WHEN d.status_analitico='CONFIRMADO'
         OR d.presuncao THEN true
         WHEN d.status_analitico IN ('NOVO','PENDENTE','CANCELADO') THEN false END,
-    motivo_elegibilidade=CASE WHEN d.status_analitico='CANCELADO'
+    motivo_elegibilidade=CASE WHEN d.combo_migrado_ativo
+        THEN 'COMBO_MIGRADO_ATIVO'
+        WHEN d.status_analitico='CANCELADO'
         THEN 'PEDIDO_CANCELADO'
         WHEN d.qtd_ambigua THEN 'QUANTIDADE_OU_REEMBOLSO_AMBIGUO'
         WHEN d.presuncao THEN 'PAGO_PRESUMIDO_EVENTO_REALIZADO'
@@ -188,4 +195,7 @@ WHERE f.inscricao_key=d.inscricao_key
   AND (f.dependencias_hash_snapshot IS DISTINCT FROM d.dep_hash
        OR f.derivado_de_dependencias_hash IS NULL
        OR f.derivado_de_hash IS DISTINCT FROM f.conteudo_hash
-       OR f.versao_regras_derivacao IS DISTINCT FROM 'CORE_V1_20261022');
+       OR f.versao_regras_derivacao IS DISTINCT FROM 'CORE_V1_20261022'
+       -- Protocolo não muda: a regra só alcança combos migrados ainda não marcados.
+       OR (d.combo_migrado_ativo
+           AND f.motivo_elegibilidade IS DISTINCT FROM 'COMBO_MIGRADO_ATIVO'));
