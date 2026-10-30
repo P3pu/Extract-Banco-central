@@ -10,8 +10,8 @@
    `src.pipeline.ativo_pedido_usuario` para o histórico) e em
    `staging.ativo_pedido.comprador_usuario_id`. A política CPF/HMAC e a vinculação entre origens
    foram implementadas na migração 008 (`docs/CORE_DIM_PESSOA_CONTATO.md`),
-   mas o preenchimento segue atrás do gate `CORE_PII_ENABLE_SYNC` e o backfill
-   histórico desde 01/01/2026 aguarda aprovação de volume.
+   e o backfill desde 01/01/2026 foi aprovado em 30/10/2026; o gate
+   `CORE_PII_ENABLE_SYNC` fica aberto na automação do servidor.
 4. Composição e atribuição dos combos não comprovadas. `dim_combo` é parcial;
    combos vendidos e ticket médio de combo não são publicados.
 5. Categoria Magento disponível na inscrição é ID numérico. A descrição

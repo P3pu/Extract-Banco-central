@@ -10,8 +10,9 @@ processou 714 pedidos e 1.259 inscrições; 02/01 processou 1.359 pedidos e
 2.657 inscrições. A inspeção posterior encontrou 3.054 pessoas e 3.066 mapas,
 com 3.040 CPFs validados, zero tokens duplicados e zero mapas órfãos. Nome e
 e-mail estão preenchidos em 3.053 pessoas cada. Os dados pessoais não foram
-exportados nem registrados em logs. O gate `CORE_PII_ENABLE_SYNC` permanece
-fechado na automação.
+exportados nem registrados em logs. Em 30/10/2026 a chave foi rotacionada,
+o backfill desde 01/01/2026 foi executado no servidor e o gate
+`CORE_PII_ENABLE_SYNC` passou a ficar aberto no `bcd-raw-core.service`.
 
 O `EXPLAIN` sem `ANALYZE` para o período desde 01/01 estimou cerca de 610 mil
 pedidos e 901 mil inscrições. O processamento contínuo dos demais dias requer

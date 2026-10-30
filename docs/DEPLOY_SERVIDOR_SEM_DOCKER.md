@@ -84,3 +84,8 @@ Windows. Nada de RAW, CORE, watermarks ou diário é apagado.
   `CORE_PII_ENABLE_SYNC` continua fechado; antes de abri-lo, localizar a chave
   usada no backfill de 27/10 ou definir rotação, para não gerar tokens
   diferentes para o mesmo CPF.
+- 30/10/2026: release `0133f5a` (regras de desconto, cupom e comprador Ativo).
+  Chave HMAC rotacionada (3.040 pessoas) para `/var/lib/bcd/core-person-hmac.key`,
+  recálculo completo do Ativo e backfill de pessoas desde 01/01/2026. Em
+  seguida o gate `CORE_PII_ENABLE_SYNC` passa a ficar aberto no
+  `bcd-raw-core.service`: cada ciclo sincroniza pessoas dos IDs alterados.

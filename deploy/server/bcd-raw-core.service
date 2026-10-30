@@ -11,6 +11,9 @@ WorkingDirectory=/opt/extract-banco-central/app
 Environment=BCD_AUTOMATION_ENABLE=approved
 Environment=BCD_DIRECT_POSTGRES=1
 Environment=BCD_STATE_DIR=/var/lib/bcd
+# Gate PII aberto em 30/10/2026, após rotação da chave HMAC e backfill desde
+# 01/01/2026. Chave em $BCD_STATE_DIR/core-person-hmac.key (bcd, 0400).
+Environment=CORE_PII_ENABLE_SYNC=approved
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/extract-banco-central/venv/bin/python -m src.automation.local_raw_core run-once
 TimeoutStartSec=4h
