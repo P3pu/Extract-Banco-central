@@ -1,9 +1,9 @@
 -- Combos vendidos no Ativo, migrados ou não ao Magento (decisão 03/11/2026:
 -- o Ativo é a informação original; migração é só sinalização na view).
 -- O Ativo traz uma inscrição por prova e um único combo por pedido
--- (sa_pedido.id_combo). Pertence ao combo a inscrição cujo evento está no
--- cardápio do combo (staging.ativo_combo_cardapio); fora dele é avulsa.
--- Produtos (core.evento_produto) ficam fora do combo.
+-- (sa_pedido.id_combo). Pertencem ao combo todas as inscrições do pedido, menos
+-- os produtos (core.evento_produto). O cardápio não define o combo: está
+-- incompleto para etapas trocadas depois da venda (ensaio de 03/11/2026).
 -- Um pedido pode ter vários combos vendidos: um por participante e, quando as
 -- inscrições do participante são múltiplo exato do tamanho do combo, um por
 -- múltiplo. Tamanho = quantidade mais comum de inscrições daquele combo_id;
@@ -28,9 +28,6 @@ WITH escopo AS (
       AND f.combo_key IN (SELECT combo_key FROM escopo)
       AND NOT EXISTS (SELECT 1 FROM core.evento_produto x
                       WHERE x.evento_id_origem=f.evento_id_origem)
-      AND EXISTS (SELECT 1 FROM staging.ativo_combo_cardapio m
-                  WHERE m.combo_id::text=c.combo_id_origem
-                    AND m.evento_id=f.evento_id_origem)
     GROUP BY 1,2,3
 ), tamanho AS (
     SELECT combo_key, mode() WITHIN GROUP (ORDER BY qtd) tamanho
@@ -42,9 +39,6 @@ WITH escopo AS (
     FROM escopo e
     WHERE NOT EXISTS (SELECT 1 FROM core.evento_produto x
                       WHERE x.evento_id_origem=e.evento_id_origem)
-      AND EXISTS (SELECT 1 FROM staging.ativo_combo_cardapio m
-                  WHERE m.combo_id::text=e.combo_id_origem
-                    AND m.evento_id=e.evento_id_origem)
     WINDOW w AS (PARTITION BY e.pedido_id_origem, e.participante, e.combo_key
                  ORDER BY e.inscricao_key)
 ), desejadas AS (

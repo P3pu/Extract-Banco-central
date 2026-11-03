@@ -20,10 +20,8 @@ ENTITIES = {
                         "022_create_ativo_pedido_endereco_raw.sql"),
     "cupom_desconto": (complementos.cupom_desconto, 7248319321,
                        "038_create_ativo_cupom_desconto_raw.sql"),
-    "combo_cardapio": (complementos.combo_cardapio, 7248319322,
-                       "040_create_ativo_combo_cardapio_raw.sql"),
 }
-SNAPSHOT_ENTITIES = {"pedido_produto", "cupom_desconto", "combo_cardapio"}
+SNAPSHOT_ENTITIES = {"pedido_produto", "cupom_desconto"}
 
 
 def log(event, entity, **fields):
@@ -89,8 +87,7 @@ def run(settings, mode, batch_size=None, days=None, entity="pedido_produto"):
     days = settings.reconciliation_days if days is None else days
     allowed = {"pedido_produto": {"FULL", "INCREMENTAL", "SNAPSHOT"},
                "pedido_endereco": {"FULL", "INCREMENTAL", "RECONCILIATION"},
-               "cupom_desconto": {"FULL", "SNAPSHOT"},
-               "combo_cardapio": {"FULL", "SNAPSHOT"}}
+               "cupom_desconto": {"FULL", "SNAPSHOT"}}
     if entity not in allowed or mode not in allowed[entity] or batch_size <= 0 or days <= 0:
         raise ValueError("Modo, lote ou entidade inválidos")
     batch_id = uuid4()

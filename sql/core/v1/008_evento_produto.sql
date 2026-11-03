@@ -19,3 +19,15 @@ INSERT INTO core.evento_produto (evento_id_origem, nome_produto) VALUES
     (40103,'Moletom Bravus'),
     (40186,'Óculos')
 ON CONFLICT (evento_id_origem) DO NOTHING;
+
+-- Eventos que parecem produto e ainda dependem de revisão (decisão 03/11/2026):
+-- seguem como inscrição, mas o combo que os contém não conta em core.combo_vendido.
+CREATE TABLE IF NOT EXISTS core.evento_revisao (
+    evento_id_origem BIGINT PRIMARY KEY,
+    motivo TEXT NOT NULL CHECK (BTRIM(motivo)<>'')
+);
+
+INSERT INTO core.evento_revisao (evento_id_origem, motivo) VALUES
+    (33722,'Kit Vip - Corrida Pão de Açúcar Kids Brasília'),
+    (33724,'Kit Vip - Corrida Pão de Açúcar Kids Rio de Janeiro')
+ON CONFLICT (evento_id_origem) DO NOTHING;

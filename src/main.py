@@ -64,7 +64,6 @@ def parser():
                                               "tamanho_camiseta", "formas_pagamento",
                                               "produto", "combo", "cidade", "estado", "pais",
                                               "pedido_produto", "cupom_desconto",
-                                              "combo_cardapio",
                                               "product_varchar", "product_int",
                                               "product_datetime", "eav_attribute", "option_value",
                                               "customer_order_item", "product_link", "company_user",
@@ -127,9 +126,8 @@ def main(argv=None):
                         raise ConfigurationError("Entidade incompatível com Ativo")
                     from src.pipeline.ativo_snapshot import ENTITIES, run as run_reference
                     for entity in ([args.entity] if args.entity
-                                   else [*ENTITIES, "pedido_produto", "cupom_desconto",
-                                         "combo_cardapio"]):
-                        if entity in ("pedido_produto", "cupom_desconto", "combo_cardapio"):
+                                   else [*ENTITIES, "pedido_produto", "cupom_desconto"]):
+                        if entity in ("pedido_produto", "cupom_desconto"):
                             from src.pipeline.ativo_complementos import run
                             run(settings, "SNAPSHOT", args.batch_size, entity=entity)
                         else:

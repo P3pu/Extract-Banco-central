@@ -12,7 +12,7 @@ from src.core import runner
 
 _V1 = Path(__file__).resolve().parents[2] / "sql/core/v1"
 SQL = _V1 / "016_combo_atribuicao_ativo.sql"
-VALIDADO_POR = "licencas.bi@cscdoesporte.com.br (regra COMBO_CARDAPIO_ATIVO)"
+VALIDADO_POR = "licencas.bi@cscdoesporte.com.br (regra COMBO_ATIVO)"
 VALIDADO_EM = "2026-11-03T00:00:00-03:00"
 
 

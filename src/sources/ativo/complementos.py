@@ -95,15 +95,3 @@ cupom_desconto = ComplementoContract(
         "id_cupom_desconto": ("int(10) unsigned", "BIGINT", False),
         "en_cupom_classificacao": ("enum", "TEXT", True),
     })
-
-# Cardápio do combo (sa_combo_evento_categoria, 9,7 mil linhas em 30/10/2026):
-# eventos/categorias que podem compor cada combo. Snapshot diário completo.
-combo_cardapio = ComplementoContract(
-    TABLE="sa_combo_evento_categoria", PK="id_combo_evento_categoria",
-    FIELDS={
-        "id_combo_evento_categoria": ("int(10) unsigned", "BIGINT", False),
-        "ds_categoria": ("varchar(60)", "VARCHAR(60)", False),
-        "id_evento": ("int(11)", "INTEGER", False),
-        "id_combo": ("int(11)", "INTEGER", False),
-        "fl_obrigatorio": ("int(1)", "INTEGER", True),
-    })
