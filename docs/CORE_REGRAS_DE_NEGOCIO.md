@@ -12,9 +12,10 @@ indicadores `core.fato_inscricao_indicadores_validos` permanece `WHERE FALSE`.
   Magento = `increment_id`. Cabeçalho financeiro entra uma vez por pedido.
 - `fato_inscricao`: `(origem, inscricao_id_origem)`; Ativo = pedido_evento,
   Magento = bundle pai. Filhos não viram inscrições. Órfãs e pedido NULL ficam.
-- Participante Ativo é preservado com namespace `Usuario` ou `UsuarioBalcao`
-  quando somente um identificador existe. Ambos preenchidos ficam NULL e
-  pendentes. `participante_id_origem` Magento fica NULL; a `participante_key`
+- Participante Ativo é quem corre: com `usuario_balcao_id` maior que zero, é o
+  balcão (namespace `UsuarioBalcao`), e o `usuario_id` fica só como comprador do
+  pedido (decisão de 03/11/2026). Sem balcão, é o `usuario_id` (namespace
+  `Usuario`). ID zero conta como ausente. `participante_id_origem` Magento fica NULL; a `participante_key`
   Magento só é preenchida pela sincronização de contatos, quando o cliente do
   bundle não é ambíguo. Comprador Ativo = `sa_pedido.id_usuario` (namespace
   `Usuario`), desde 30/10/2026; nunca é copiado do participante. Quem compra

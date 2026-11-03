@@ -4,14 +4,13 @@ WITH fonte AS (
     SELECT 'ativo'::text origem, i.inscricao_id::bigint inscricao_id_origem,
            i.pedido_id::bigint pedido_id_origem, fp.pedido_key,
            i.evento_id::bigint evento_id_origem, em.evento_key,
-           CASE WHEN i.usuario_id IS NOT NULL AND i.usuario_balcao_id IS NOT NULL
-                THEN NULL::bigint
-                ELSE COALESCE(i.usuario_id,i.usuario_balcao_id)::bigint END
+           -- Participante é quem corre. Com os dois IDs, usuario_id é o comprador
+           -- do pedido e o balcão é o atleta da inscrição; 0 significa sem cadastro.
+           CASE WHEN i.usuario_balcao_id>0 THEN i.usuario_balcao_id::bigint
+                WHEN i.usuario_id>0 THEN i.usuario_id::bigint END
                 participante_id_origem,
-           CASE WHEN i.usuario_id IS NOT NULL AND i.usuario_balcao_id IS NOT NULL
-                THEN NULL::text
-                WHEN i.usuario_id IS NOT NULL THEN 'Usuario'
-                WHEN i.usuario_balcao_id IS NOT NULL THEN 'UsuarioBalcao' END
+           CASE WHEN i.usuario_balcao_id>0 THEN 'UsuarioBalcao'::text
+                WHEN i.usuario_id>0 THEN 'Usuario' END
                 participante_namespace_origem,
            combo.combo_key,
            core.try_date(i.data_evento) data_evento,
