@@ -1,6 +1,6 @@
-"""Atribuição de inscrições Ativo aos combos migrados ao Magento.
+"""Atribuição de inscrições Ativo a combos vendidos (migrados ou não).
 
-Regra aprovada em 30/10/2026 (Ativo é a origem oficial). A automação chama
+Regra aprovada em 03/11/2026 (Ativo é a origem oficial). A automação chama
 `sync_changed` com os pedidos alterados no ciclo; `main` preenche o histórico.
 """
 
@@ -10,20 +10,20 @@ from pathlib import Path
 
 from src.core import runner
 
-SQL = Path(__file__).resolve().parents[2] / "sql/core/v1/015_combo_atribuicao_migrados.sql"
-VALIDADO_POR = "licencas.bi@cscdoesporte.com.br (regra COMBO_MIGRADO_ATIVO)"
-VALIDADO_EM = "2026-10-30T00:00:00-03:00"
+_V1 = Path(__file__).resolve().parents[2] / "sql/core/v1"
+SQL = _V1 / "016_combo_atribuicao_ativo.sql"
+VALIDADO_POR = "licencas.bi@cscdoesporte.com.br (regra COMBO_ATIVO)"
+VALIDADO_EM = "2026-11-03T00:00:00-03:00"
 
 
-def sync(conn, ativo_pedidos=None, magento_pedidos=None, todos=False):
+def sync(conn, ativo_pedidos=None, todos=False):
     """Recalcula as atribuições do escopo numa transação; devolve linhas gravadas."""
-    if not todos and not ativo_pedidos and not magento_pedidos:
+    if not todos and not ativo_pedidos:
         return 0
     with conn.transaction():
         result = conn.execute(SQL.read_text(encoding="utf-8"), {
             "todos": todos,
             "ativo_pedidos": sorted(ativo_pedidos or ()),
-            "magento_pedidos": sorted(magento_pedidos or ()),
             "validado_por": VALIDADO_POR,
             "validado_em": VALIDADO_EM,
         })
@@ -31,7 +31,7 @@ def sync(conn, ativo_pedidos=None, magento_pedidos=None, todos=False):
 
 
 def sync_changed(conn, orders):
-    return sync(conn, orders.get("ativo"), orders.get("magento"))
+    return sync(conn, orders.get("ativo"))
 
 
 def main(argv=None):

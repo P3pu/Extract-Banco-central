@@ -5,6 +5,7 @@ WITH dados AS (
     SELECT f.inscricao_key, f.conteudo_hash, f.flag_evento_nao_mapeado,
            f.flag_pedido_nao_encontrado, f.flag_evento_teste, f.data_evento,
            f.combo_key,
+           (f.evento_id_origem IN (SELECT evento_id_origem FROM core.evento_produto)) produto,
            i.status_detalhado_id, i.status_pedido_id,
            i.local_inscricao_codigo, i.preco, i.desconto_individual,
            i.taxa, i.categoria, i.cupom_individual_id,
@@ -76,7 +77,8 @@ WITH dados AS (
     FROM dados d
 ), final AS (
     SELECT r.*,
-           CASE WHEN cancelada THEN false
+           CASE WHEN produto THEN false
+                WHEN cancelada THEN false
                 WHEN status_pendente THEN NULL::boolean
                 WHEN NOT pedido_elegivel THEN false
                 WHEN flag_pedido_nao_encontrado
@@ -118,7 +120,8 @@ UPDATE core.fato_inscricao f SET
                            AND d.status_pedido_id=1
                            AND d.local_inscricao_codigo=2 THEN false
                           WHEN d.elegivel IS FALSE THEN false END,
-    motivo_elegibilidade=CASE WHEN d.cancelada THEN 'CANCELAMENTO_PREVALECE'
+    motivo_elegibilidade=CASE WHEN d.produto THEN 'PRODUTO_NAO_INSCRICAO'
+                              WHEN d.cancelada THEN 'CANCELAMENTO_PREVALECE'
                               WHEN d.status_pendente THEN 'STATUS_ESPECIAL'
                               WHEN d.status_pedido_id=1
                                AND d.local_inscricao_codigo=2
@@ -126,7 +129,8 @@ UPDATE core.fato_inscricao f SET
                               WHEN d.elegivel IS TRUE THEN 'PEDIDO_E_INSCRICAO_ELEGIVEIS'
                               ELSE 'RELACIONAMENTO_OU_STATUS_PENDENTE' END,
     status_pendente_validacao=d.status_pendente,
-    motivo_status_analitico=CASE WHEN d.cancelada THEN 'CANCELADA'
+    motivo_status_analitico=CASE WHEN d.produto THEN 'PRODUTO'
+                                 WHEN d.cancelada THEN 'CANCELADA'
                                  WHEN d.status_pendente THEN 'CODIGO_PENDENTE'
                                  WHEN d.elegivel IS TRUE THEN 'ELEGIVEL'
                                  ELSE 'PEDIDO_NAO_ELEGIVEL_OU_SEM_MAPA' END,
@@ -153,7 +157,8 @@ UPDATE core.fato_inscricao f SET
         THEN d.preco+d.taxa END,
     taxa_servico_ativo=d.taxa,
     flag_excecao_financeira=d.financeiro_pendente,
-    estado_derivacao=CASE WHEN d.financeiro_pendente OR d.status_pendente
+    estado_derivacao=CASE WHEN d.produto THEN 'VALIDADO'
+                          WHEN d.financeiro_pendente OR d.status_pendente
                               OR d.elegivel IS NULL THEN 'PENDENTE'
                           ELSE 'VALIDADO' END,
     derivado_de_hash=f.conteudo_hash,
@@ -168,4 +173,6 @@ WHERE f.inscricao_key=d.inscricao_key
   AND (f.dependencias_hash_snapshot IS DISTINCT FROM d.dep_hash
        OR f.derivado_de_dependencias_hash IS NULL
        OR f.derivado_de_hash IS DISTINCT FROM f.conteudo_hash
-       OR f.versao_regras_derivacao IS DISTINCT FROM 'CORE_V1_20261030');
+       OR f.versao_regras_derivacao IS DISTINCT FROM 'CORE_V1_20261030'
+       -- A lista de produtos não entra no hash: só os eventos afetados são regravados.
+       OR d.produto <> (f.motivo_elegibilidade IS NOT DISTINCT FROM 'PRODUTO_NAO_INSCRICAO'));

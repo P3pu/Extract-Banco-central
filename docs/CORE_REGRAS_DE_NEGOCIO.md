@@ -74,18 +74,56 @@ demais classificações são só informativas. Magento aceita prefixo GR e etiqu
 regras; categoria numérica não é tratada como texto. Cortesia usa categoria,
 etiqueta ou bruto zero somente na ausência de sinal de grupos.
 
-Combos são vendidos no Ativo e migrados para o Magento como um pedido por
-combo, com protocolo `<id_pedido Ativo>-<n>` e um bundle `<EVENTO>COMBO<n>`.
-Um pedido Ativo pode ter vários combos; `sa_pedido.id_combo` guarda só um.
-O Ativo é a origem oficial (decisão de 30/10/2026): inscrições Magento desses
+Combos são vendidos no Ativo e parte deles foi migrada para o Magento, com
+protocolo `<id_pedido Ativo>-<n>` e um bundle `<EVENTO>COMBO<n>` por prova.
+O Ativo é a origem oficial (decisão de 03/11/2026): inscrições Magento desses
 protocolos ficam com `contabiliza_inscricao=false` e motivo
-`COMBO_MIGRADO_ATIVO`, sem dupla contagem. Cada pedido migrado é uma prova de um combo; o
-prefixo do SKU até `COMBO<n>` identifica o combo (`dim_combo` origem
-`magento`). A inscrição Ativo do mesmo pedido e do mesmo evento, em casamento
-1:1, é gravada em `combo_inscricao_atribuicao` com `grupo_comercial_id =
-<id_pedido Ativo>:<combo>` (`sql/core/v1/015_combo_atribuicao_migrados.sql`).
-A automação recalcula os pedidos alterados; `python -m
-src.core.combo_attribution --approve-production` preenche o histórico.
+`COMBO_MIGRADO_ATIVO`, sem dupla contagem, e a migração é só sinalização.
+
+Regra única para os combos do Ativo, migrados ou não: o Ativo traz uma
+inscrição por prova e um `id_combo` por pedido. Pertencem ao combo todas as
+inscrições do pedido, menos os produtos. O cardápio
+(`sa_combo_evento_categoria`) não é usado: não acompanha etapas trocadas depois
+da venda e deixava de fora 18,5 mil combos com provas legítimas (ensaio de
+03/11/2026). Produtos do combo (Hoodie,
+Mala tubo, Óculos, Moletom Bravus) são eventos no Ativo, sem campo que os
+identifique: a lista `core.evento_produto` os mantém fora dos combos e da
+contagem de inscrições (motivo `PRODUTO_NAO_INSCRICAO`) e precisa de curadoria
+quando surgir produto novo.
+
+Um pedido pode ter vários combos vendidos, então a unidade não é o pedido:
+cada participante do pedido é um combo vendido (`grupo_comercial_id =
+<pedido>:ativo:<id_combo>:<participante>`, regra 016). O tamanho do combo é a
+quantidade mais comum de inscrições daquele `combo_id` (o nome se repete por ano
+e praça, com tamanhos diferentes). Inscrições em múltiplo exato do tamanho
+contam um combo por múltiplo, sufixo `:<n>` a partir do segundo, em ordem de
+inscrição. Acima do tamanho sem múltiplo exato fica para revisão. Tamanho menor
+que 2 não separa combos. `nr_qntprovas`
+não é usado (0 nos combos Fixo). A automação recalcula os pedidos
+alterados; `python -m src.core.combo_attribution --approve-production`
+preenche o histórico e substitui as atribuições da antiga regra por SKU.
+
+Magento direto (desde out/2023), fora dos protocolos migrados: cada linha com
+`COMBO` no SKU é uma prova, não um combo, e cada etapa costuma vir em um pedido,
+sem participante. Um combo vendido = comprador + circuito + `COMBO<n>` do primeiro
+trecho do SKU (`CDE25SP1COMBO4` = circuito `CDE25SP`, etapa 1, 4 provas); a
+k-ésima linha de cada etapa forma o k-ésimo combo. O Hoodie vem dentro do SKU da
+etapa e não tem linha própria, então não conta, mas o valor dele não se separa do
+valor da linha.
+
+`core.combo_vendido` (migração 009) tem uma linha por combo vendido com canal
+(`ATIVO`, `MAGENTO`), sinais `migrado_magento`, `revisar` e `motivo_revisao`, combo, pedido, data, valores e
+`contabiliza`, base para combos vendidos, faturamento e ticket médio. Combo com
+`revisar=true` fica com `contabiliza=false` até ser revisto. `motivo_revisao`, com
+os motivos separados por `+`: `TAMANHO` (acima do tamanho sem formar outro combo),
+`VALOR` (inscrição não cancelada acima de R$ 2.000, caso dos combos 408 e 437 de
+2017, de R$ 8.700 e R$ 10.000 por prova), `PRODUTO` (evento em
+`core.evento_revisao`, como o Kit Vip), `SEM_NUMERO` (SKU Magento sem `COMBO<n>`),
+`ETAPAS_INCOMPLETAS` (circuito Magento com menos etapas que provas, como
+`CDE24SP1COMBO2`, em que a outra prova tem outro SKU) e `SEM_COMPRADOR`. A flag vale
+só para o combo: as inscrições continuam na fato. Em todos os canais, o combo conta
+se qualquer inscrição contar, porque foi vendido mesmo com uma prova cancelada, mas
+o valor das canceladas não entra nos valores do combo (decisão de 03/11/2026).
 
 Eventos nascem separados por `(origem, ID)`. A unificação entre origens só
 existe por vínculo validado: o evento Magento passa a apontar para o
