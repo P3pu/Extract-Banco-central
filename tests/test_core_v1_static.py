@@ -138,6 +138,15 @@ def test_orphans_and_source_identity_are_not_dropped():
     assert "NULL::bigint,NULL::text" in base  # Magento participante sem prova
 
 
+def test_ativo_participant_prefers_balcao_and_ignores_zero_ids():
+    base = (SQL / "030_inscricao_base.sql").read_text(encoding="utf-8")
+    assert "WHEN i.usuario_balcao_id>0 THEN i.usuario_balcao_id::bigint" in base
+    assert "WHEN i.usuario_id>0 THEN i.usuario_id::bigint" in base
+    assert base.index("usuario_balcao_id>0 THEN 'UsuarioBalcao'") < base.index(
+        "usuario_id>0 THEN 'Usuario'")
+    assert "COALESCE(i.usuario_id,i.usuario_balcao_id)" not in base
+
+
 def test_magento_header_discount_not_allocated_by_default():
     mag = (SQL / "041_inscricao_magento.sql").read_text(encoding="utf-8")
     assert "desconto_conciliado" in mag

@@ -25,7 +25,7 @@
 | `taxa_servico_ativo` | Inscrição Ativo | `staging.ativo_inscricao.taxa`; não é kit nem receita própria. |
 | `valor_liquido_inscricao` | Inscrição | Ativo `GREATEST(0,preço-desconto-kit)` válido; Magento somente quando cabeçalho/itens e quantidade conciliados. |
 | `classificacao_comercial` | Inscrição | GRUPOS > CORTESIA > SITE; cupom sem classificação não deixa pendente. |
-| `participante_id_origem` + `participante_namespace_origem` | Inscrição Ativo | Um único `usuario_id` ou `usuario_balcao_id`; ambos => NULL. Magento NULL. |
+| `participante_id_origem` + `participante_namespace_origem` | Inscrição Ativo | `usuario_balcao_id` quando maior que zero; senão `usuario_id`; ID zero conta como ausente. Magento NULL. |
 | `combo_key` | Inscrição Ativo | Combo do pedido se mapeado; não prova composição. |
 | `conteudo_hash` | Pedido/inscrição | Alterações no conjunto básico de atributos selecionados. |
 | `dependencias_hash_snapshot` | Inscrição | Hash de status, finanças, auxiliares, regra e data de referência; controle de rederivação. |
