@@ -7,7 +7,8 @@
 -- * Magento direto: unidade = bundle com COMBO no SKU fora dos protocolos
 --   migrados; provas = número de COMBO<n>.
 -- Não substitui a view de indicadores. No Ativo, o combo conta se qualquer
--- inscrição contar: foi vendido mesmo com uma prova cancelada (decisão 03/11/2026).
+-- inscrição contar: foi vendido mesmo com uma prova cancelada, mas o valor das
+-- canceladas não entra nos valores do combo (decisão 03/11/2026).
 CREATE OR REPLACE VIEW core.combo_vendido AS
 WITH migrados AS (
     SELECT DISTINCT split_part(p.protocolo,'-',1)::bigint AS ativo_pedido
@@ -22,9 +23,13 @@ WITH migrados AS (
            MIN(f.pedido_id_origem) AS pedido_id_origem,
            MIN(p.data_pedido) AS data_pedido,
            COUNT(*) AS qtd_inscricoes,
-           SUM(f.valor_bruto_inscricao) AS valor_bruto,
-           CASE WHEN BOOL_AND(f.valor_liquido_inscricao IS NOT NULL)
-                THEN SUM(f.valor_liquido_inscricao) END AS valor_liquido,
+           COALESCE(SUM(f.valor_bruto_inscricao)
+                    FILTER (WHERE f.flag_cancelado_inscricao IS NOT TRUE),0) AS valor_bruto,
+           CASE WHEN COALESCE(BOOL_AND(f.valor_liquido_inscricao IS NOT NULL)
+                              FILTER (WHERE f.flag_cancelado_inscricao IS NOT TRUE),TRUE)
+                THEN COALESCE(SUM(f.valor_liquido_inscricao)
+                              FILTER (WHERE f.flag_cancelado_inscricao IS NOT TRUE),0)
+                END AS valor_liquido,
            CASE WHEN BOOL_OR(f.contabiliza_inscricao IS TRUE) THEN TRUE
                 WHEN BOOL_AND(f.contabiliza_inscricao IS FALSE) THEN FALSE END AS contabiliza,
            CASE WHEN BOOL_AND(f.estado_derivacao='VALIDADO') THEN 'VALIDADO'
@@ -49,8 +54,10 @@ WITH migrados AS (
            1::bigint AS qtd_inscricoes,
            NULLIF(substring(f.sku_inscricao_magento from 'COMBO([0-9]+)'),'')::integer
              AS qtd_provas_combo,
-           f.valor_bruto_inscricao AS valor_bruto,
-           f.valor_liquido_inscricao AS valor_liquido,
+           CASE WHEN f.flag_cancelado_inscricao IS TRUE THEN 0
+                ELSE f.valor_bruto_inscricao END AS valor_bruto,
+           CASE WHEN f.flag_cancelado_inscricao IS TRUE THEN 0
+                ELSE f.valor_liquido_inscricao END AS valor_liquido,
            f.contabiliza_inscricao AS contabiliza,
            f.estado_derivacao,
            FALSE AS revisar_tamanho

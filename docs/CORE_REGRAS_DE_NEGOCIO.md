@@ -108,7 +108,8 @@ protocolos migrados é um combo vendido; `COMBO<n>` é o número de provas.
 (`ATIVO`, `MAGENTO`), sinais `migrado_magento` e `revisar_tamanho`, combo, pedido, data, valores e
 `contabiliza`, base para combos vendidos, faturamento e ticket médio. No Ativo,
 o combo conta se qualquer inscrição contar, porque foi vendido mesmo com uma prova
-cancelada (decisão de 03/11/2026).
+cancelada, mas o valor das canceladas não entra nos valores do combo, em nenhum
+canal (decisão de 03/11/2026).
 
 Eventos nascem separados por `(origem, ID)`. A unificação entre origens só
 existe por vínculo validado: o evento Magento passa a apontar para o

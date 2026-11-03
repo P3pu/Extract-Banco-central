@@ -67,3 +67,6 @@ def test_combo_vendido_view_avoids_double_counting():
     assert "a.qtd_inscricoes>t.tamanho AS revisar_tamanho" in view
     # Combo vendido conta mesmo com uma prova cancelada.
     assert "CASE WHEN BOOL_OR(f.contabiliza_inscricao IS TRUE) THEN TRUE" in view
+    # O valor das provas canceladas não entra no combo.
+    assert view.count("FILTER (WHERE f.flag_cancelado_inscricao IS NOT TRUE)") == 3
+    assert view.count("CASE WHEN f.flag_cancelado_inscricao IS TRUE THEN 0") == 2
