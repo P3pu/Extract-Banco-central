@@ -26,6 +26,8 @@ MIGRATIONS = (
     ROOT / "sql/core/proposed/002_core_helpers.sql",
     SQL / "006_core_v1_extensions.sql",
     SQL / "007_core_alerta_zero_id.sql",
+    SQL / "008_evento_produto.sql",
+    SQL / "009_combo_vendido.sql",
 )
 STEPS = {
     "events": ("010_eventos.sql", "011_evento_map.sql",

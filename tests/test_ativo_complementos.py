@@ -10,7 +10,8 @@ from src.pipeline import ativo_complementos
 from src.sources.ativo import complementos
 
 
-@pytest.mark.parametrize("contract", [complementos.pedido_produto, complementos.pedido_endereco])
+@pytest.mark.parametrize("contract", [complementos.pedido_produto, complementos.pedido_endereco,
+                                      complementos.combo_cardapio])
 def test_contract_schema_and_pk_pagination(contract):
     columns = [{"COLUMN_NAME": name, "COLUMN_TYPE": spec[0],
                 "IS_NULLABLE": "YES" if spec[2] else "NO"}

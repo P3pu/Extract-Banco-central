@@ -29,7 +29,7 @@ PHASES = {
         "310_ativo_endereco_pedido.sql", "320_ativo_cidade.sql",
         "330_ativo_estado.sql", "340_ativo_pais.sql",
         "350_ativo_combo.sql", "360_ativo_cupom.sql",
-        "365_ativo_cupom_desconto.sql")),
+        "365_ativo_cupom_desconto.sql", "355_ativo_combo_cardapio.sql")),
     7: ("ativo/370_ativo_inscricao.sql",),
 }
 
