@@ -1,6 +1,9 @@
+import hashlib
 from unittest.mock import MagicMock
 
-from src.core import combo_attribution
+import pytest
+
+from src.core import combo_attribution, runner
 
 
 def test_sync_skips_empty_scope_and_passes_all_flag():
@@ -79,3 +82,45 @@ def test_combo_vendido_view_avoids_double_counting():
     # O valor das provas canceladas não entra no combo.
     assert view.count("FILTER (WHERE f.flag_cancelado_inscricao IS NOT TRUE)") == 4
     assert view.count("FILTER (WHERE o.flag_cancelado_inscricao IS NOT TRUE)") == 3
+
+
+def _migration_conn(applied):
+    conn = MagicMock()
+    def execute(sql, params=None):
+        result = MagicMock()
+        if "to_regclass" in sql:
+            result.fetchone.return_value = ("core.schema_migration",)
+        elif sql.startswith("SELECT migration_id"):
+            return list(applied)
+        return result
+    conn.execute.side_effect = execute
+    return conn
+
+
+@pytest.fixture
+def migrations(tmp_path, monkeypatch):
+    paths = tuple(tmp_path / f"{n}.sql" for n in ("a", "b", "c"))
+    for path in paths:
+        path.write_text(f"SELECT '{path.stem}'", encoding="utf-8")
+    monkeypatch.setattr(runner, "MIGRATIONS", paths)
+    return paths
+
+
+def _digest(path):
+    return path.name, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_migrate_applies_every_missing_migration_at_the_end(migrations):
+    conn = _migration_conn([_digest(migrations[0])])
+    runner.migrate(conn)
+    executed = [c.args[0] for c in conn.execute.call_args_list]
+    assert "SELECT 'a'" not in executed
+    assert executed.index("SELECT 'b'") < executed.index("SELECT 'c'")
+
+
+def test_migrate_rejects_gap_divergence_and_missing_base(migrations):
+    for applied in ([_digest(migrations[1])], [(migrations[0].name, "x")], []):
+        conn = _migration_conn(applied)
+        with pytest.raises(RuntimeError, match="Migration ausente/divergente"):
+            runner.migrate(conn)
+        assert "SELECT 'c'" not in [c.args[0] for c in conn.execute.call_args_list]

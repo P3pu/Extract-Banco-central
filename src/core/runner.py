@@ -437,22 +437,22 @@ def migrate(conn: psycopg.Connection) -> None:
     existing = conn.execute("SELECT to_regclass('core.schema_migration')").fetchone()[0]
     if existing is not None:
         applied = dict(conn.execute("SELECT migration_id,sha256 FROM core.schema_migration"))
-        for path in MIGRATIONS[:-1]:
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            if applied.get(path.name) != digest:
+        # Só o fim da lista pode faltar: base sem aplicar exige revisão manual.
+        pending = [path for path in MIGRATIONS if path.name not in applied]
+        if len(pending) == len(MIGRATIONS) or (
+                pending and tuple(pending) != MIGRATIONS[-len(pending):]):
+            raise RuntimeError(f"Migration ausente/divergente: {pending[0].name}")
+        for path in MIGRATIONS:
+            if path.name in applied and (
+                    applied[path.name] != hashlib.sha256(path.read_bytes()).hexdigest()):
                 raise RuntimeError(f"Migration ausente/divergente: {path.name}")
-        extension = MIGRATIONS[-1]
-        digest = hashlib.sha256(extension.read_bytes()).hexdigest()
-        if extension.name in applied:
-            if applied[extension.name] != digest:
-                raise RuntimeError(f"Migration divergente: {extension.name}")
-            return
-        with conn.transaction():
-            conn.execute(extension.read_text(encoding="utf-8"))
-            conn.execute(
-                "INSERT INTO core.schema_migration(migration_id,sha256) VALUES (%s,%s)",
-                (extension.name, digest),
-            )
+        for path in pending:
+            with conn.transaction():
+                conn.execute(path.read_text(encoding="utf-8"))
+                conn.execute(
+                    "INSERT INTO core.schema_migration(migration_id,sha256) VALUES (%s,%s)",
+                    (path.name, hashlib.sha256(path.read_bytes()).hexdigest()),
+                )
         return
     if conn.execute("SELECT to_regclass('core.fato_pedido')").fetchone()[0] is not None:
         raise RuntimeError("CORE parcial existente: revisão manual necessária")
