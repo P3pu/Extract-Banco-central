@@ -50,8 +50,9 @@ de origem (`SOURCE_ID`), sem junção por nome ou e-mail. O CPF de origem é
 preservado no campo `cpf`; `cpf_valido` informa o resultado da validação.
 Um CPF válido repetido pode não representar a mesma pessoa em cadastros
 incorretos: conflitos de CPF de um ID já mapeado ou mapeamentos antigos que
-exigiriam mesclar duas `pessoa_key` interrompem a carga para revisão, sem
-mesclagem destrutiva automática. A consulta de exportação agrupa por
+exigiriam mesclar duas `pessoa_key` nunca são resolvidos sozinhos, sem
+mesclagem destrutiva automática. Só o registro em conflito fica de fora (seção
+"Conflito de identidade"). A consulta de exportação agrupa por
 `pessoa_key`, refletindo apenas as identidades efetivamente consolidadas.
 
 Antes de aplicar a migração, provisionar a chave padrão em
@@ -144,3 +145,46 @@ COMMIT;
 Para a lista de hoje (somente CORE), usar
 `sql/core/v1/920_pessoas_hoje_readonly.sql`. A exportação contém PII e deve ser
 guardada e enviada apenas por canal autorizado; não anexar CSV ao repositório.
+
+## Religamento diário (desde 04/11/2026)
+
+O vínculo item-cliente e os cadastros carregam a cada 24 horas, e as inscrições, a
+cada hora. A inscrição processada antes do cadastro ficava sem pessoa para sempre.
+Em 04/11/2026, 3.751 das 3.786 inscrições Magento recuperáveis de 2026 estavam nessa
+situação. Agora, uma vez por dia, `person_dimension.relink_missing` tenta de novo as
+inscrições sem pessoa com evento nos últimos 400 dias, até 20.000 por origem e em
+lotes de 1.000. A carga inicial, desde 2022, religou 4.376 inscrições Magento, sem
+alterar inscritos nem valores.
+
+## Conflito de identidade (desde 04/11/2026)
+
+Há conflito quando o documento atual do cadastro não bate com a pessoa já vinculada:
+por exemplo, o cliente trocou de CPF no Magento. `person_dimension.sync_isolating`
+divide o lote até achar o registro em conflito. Esse registro fica sem vínculo novo,
+a pessoa não é trocada nem mesclada, e os demais seguem. O ID sai no log como
+`CORE_PERSON_REVISAR_IDENTIDADE`.
+
+Com mais de 100 conflitos em um mesmo lote, o processo para, porque isso indica erro
+de leitura ou de chave, não troca real de documento. Divergência entre o token e o
+CPF guardado (`Token de CPF existente divergente`) também para: não é conflito de
+cadastro.
+
+## Quem entra nos KPIs de pessoas (decisão de 04/11/2026)
+
+Só pessoas com `criterio_identificacao='CPF_VALIDO'`. CPF inválido ou ausente fica
+apenas sinalizado: não há investigação nem limpeza desses documentos. A inscrição
+continua em inscritos e faturamento, porque o dado sujo é só o documento.
+
+A visão `core.inscricao_fora_kpi_pessoas` lista cada inscrição fora dos KPIs, com
+`flag_fora_kpi_pessoas`, `motivo` e `aviso`:
+
+| `motivo` | Significado |
+|---|---|
+| `CPF_INVALIDO` | Cadastro com CPF que não passa na verificação dos dígitos |
+| `SEM_CPF` | Cadastro sem CPF |
+| `CLIENTE_AMBIGUO` | Magento: item ligado a mais de um cliente |
+| `SEM_CLIENTE` | Magento: item sem cliente ligado, ainda ou em definitivo |
+| `CLIENTE_NAO_CARREGADO` | Magento: cliente ainda fora de `staging.magento_cliente` |
+| `PENDENTE_VINCULO` | Magento: dá para ligar e ainda não ligou, ou está em conflito de identidade |
+| `SEM_PARTICIPANTE` | Ativo: inscrição sem participante |
+| `PARTICIPANTE_SEM_CADASTRO` | Ativo: participante sem cadastro carregado |

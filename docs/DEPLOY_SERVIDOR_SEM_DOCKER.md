@@ -13,7 +13,10 @@ pelo mesmo código Python rodando no servidor do PostgreSQL `Atendimento`.
 | `/etc/bcd/app.env` | Credenciais MySQL/PostgreSQL; `POSTGRES_HOST=127.0.0.1` | root:bcd, 0640 |
 | `/etc/bcd/global-bundle.pem` | CA pública da AWS para os MySQL | root, 0644 |
 | `/var/lib/bcd/pending.sqlite` | Diário de IDs alterados | bcd, 0700 |
-| `/var/lib/bcd/core-person-hmac.key` | Chave HMAC de CPF (quando provisionada) | bcd, 0600 |
+| `/var/lib/bcd/core-person-hmac.key` | Chave HMAC de CPF | bcd, 0400 |
+| `/var/lib/bcd/ativo_releitura.json` | Cursor da releitura completa; só existe durante uma releitura | bcd |
+| `/var/lib/bcd/ativo_releitura.sqlite` | Diário da releitura completa | bcd |
+| `/var/lib/bcd/releitura/` | Scripts e estado de cargas únicas, fora do repositório | root |
 
 O serviço roda como o usuário de sistema `bcd`, sem shell, com
 `ProtectSystem=strict` e escrita só em `/var/lib/bcd`. Os logs vão para o
@@ -34,6 +37,14 @@ O instalador cria o usuário `bcd` e os diretórios, baixa a release, instala as
 dependências, troca o link `app` e instala as unidades systemd. Não grava
 segredos nem ativa o timer. Voltar de versão = rodar de novo com o commit
 anterior.
+
+Antes de instalar, pare o timer e espere o ciclo em andamento terminar; depois,
+religue o timer. Instalar não aplica migrações CORE: quando a versão traz uma,
+rode `python -m src.core.runner migrate --approve-production` com as variáveis
+`CORE_PG_*` e `CORE_PRODUCTION_APPROVAL`. Instale sempre um commit que já está ou
+vai para a `main`: instalar a `main` antes de um merge pendente desfaz a mudança em
+produção. Apagar `ativo_releitura.json` faria a releitura mensal recomeçar do zero;
+o diário `ativo_releitura.sqlite` não deve ser apagado.
 
 ## Verificação (somente leitura)
 
@@ -89,3 +100,8 @@ Windows. Nada de RAW, CORE, watermarks ou diário é apagado.
   recálculo completo do Ativo e backfill de pessoas desde 01/01/2026. Em
   seguida o gate `CORE_PII_ENABLE_SYNC` passa a ficar aberto no
   `bcd-raw-core.service`: cada ciclo sincroniza pessoas dos IDs alterados.
+- 04/11/2026: releases `bdc6003` e `4fd8728` (releitura diária de eventos abertos,
+  removidas na origem, cortesia), `e628d0d` e `9770588` (eventos por SKU, religamento
+  de pessoas, isolamento de conflitos) e `491aa44` (releitura mensal do Ativo). A
+  ponte do Ativo segue no notebook por decisão de 04/11/2026: com ele desligado, a
+  releitura mensal espera e continua de onde parou.

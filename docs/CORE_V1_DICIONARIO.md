@@ -2,13 +2,13 @@
 
 | Objeto/campo | Grão/origem | Regra |
 |---|---|---|
-| `dim_evento` | `(seed_origem, seed_evento_id)` | Ativo `staging.ativo_evento`; Magento `staging.magento_evento`. Não unifica por SKU. |
-| `evento_source_map` | `(origem, evento_id_origem)` | Mapa inicial para evento da própria origem; vínculo manual validado não é sobrescrito. |
+| `dim_evento` | `(seed_origem, seed_evento_id)` | Ativo `staging.ativo_evento`; Magento `staging.magento_evento`. Datas atualizadas pelo passo diário; em evento unificado, vale a do Magento. |
+| `evento_source_map` | `(origem, evento_id_origem)` | Mapa inicial para evento da própria origem; mesmo SKU une Ativo e Magento no evento Ativo com mais inscritos (`criterio_vinculo='MANUAL_VALIDADO'`). Vínculo validado não é sobrescrito. |
 | `dim_combo` | `(origem, combo_id_origem)` | `staging.ativo_combo`; quantidade prevista NULL e composição não validada. |
 | `fato_pedido` | `(origem, pedido_id_origem)` | Ativo `staging.ativo_pedido`; Magento `staging.magento_pedido`. |
 | `fato_inscricao` | `(origem, inscricao_id_origem)` | Ativo `staging.ativo_inscricao`; Magento bundle pai `staging.magento_inscricao`. |
 | `protocolo` | Pedido | Ativo `pedido_id::text`; Magento `protocolo` (`increment_id`). |
-| `comprador_id_origem` | Pedido | Magento `cliente_id`; Ativo NULL por falta de contrato. Nunca vira participante automaticamente. |
+| `comprador_id_origem` | Pedido | Magento `cliente_id`; Ativo `sa_pedido.id_usuario`, desde 30/10/2026. Nunca vira participante automaticamente. |
 | `data_pedido` | Pedido | Ativo conversão defensiva de `data_pedido`; Magento `criado_em`. Não é data do pagamento. |
 | `status_corporativo` | Pedido | Ativo códigos 1/2/5/6; Magento matriz fechada `state/status`. |
 | `pedido_elegivel` | Pedido | Ativo 2 ou 1/Balcão 2; Magento confirmado/novo/pendente coerente. |
@@ -27,6 +27,9 @@
 | `classificacao_comercial` | Inscrição | GRUPOS > CORTESIA > SITE; cupom sem classificação não deixa pendente. |
 | `participante_id_origem` + `participante_namespace_origem` | Inscrição Ativo | `usuario_balcao_id` quando maior que zero; senão `usuario_id`; ID zero conta como ausente. Magento NULL. |
 | `combo_key` | Inscrição Ativo | Combo do pedido se mapeado; não prova composição. |
+| `data_evento` | Inscrição | Ativo segue `dim_evento` e, sem ela, a data da inscrição. |
+| `inscricao_removida_origem` | `(origem, inscricao_id_origem)` | Inscrição Ativo apagada na origem, confirmada pela PK. A linha fica na RAW e na fato com `motivo_elegibilidade='REMOVIDA_NA_ORIGEM'` e não conta. |
+| `inscricao_fora_kpi_pessoas` | Inscrição (visão) | Inscrições fora dos KPIs de pessoas, com `flag_fora_kpi_pessoas`, `motivo` e `aviso`. Seguem em inscritos e faturamento. Motivos em `docs/CORE_DIM_PESSOA_CONTATO.md`. |
 | `conteudo_hash` | Pedido/inscrição | Alterações no conjunto básico de atributos selecionados. |
 | `dependencias_hash_snapshot` | Inscrição | Hash de status, finanças, auxiliares, regra e data de referência; controle de rederivação. |
 | `estado_derivacao` | Inscrição | `PENDENTE`/`VALIDADO`; publicação permanece vedada na view. |
