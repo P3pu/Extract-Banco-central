@@ -169,6 +169,19 @@ origem: `STATUS_CONTRADITORIO`, `STATUS_ESPECIAL`, `CANCELAMENTO_PARCIAL`,
 `CUPOM_HEADER_AUSENTE`, `EVENTO_SEM_MAPA`, `ORFAO_PEDIDO`, `COMBO_COMPOSICAO`
 e `DATA_INVALIDA`.
 
+## Mesmo SKU e pessoas fora dos KPIs (04/11/2026)
+
+Mesmo SKU é a mesma prova, e a data do Magento prevalece, inclusive nas inscrições
+do Ativo. Uma vez por dia, `src/core/event_sync.py` une os eventos e atualiza as
+datas de `dim_evento`. Se os eventos Ativo do SKU têm datas diferentes, só une com
+curadoria em `sql/core/v1/data/evento_sku_curadoria_20261104.csv`, porque há SKU
+repetido em cidades diferentes; sem ela, o SKU sai no log como `revisar`.
+
+Inscrição processada antes de chegar o cadastro é religada no mesmo passo diário
+(`relink_missing`). A que não dá para ligar, ou tem CPF inválido, aparece em
+`core.inscricao_fora_kpi_pessoas` com `flag_fora_kpi_pessoas` e `motivo`. Ela
+continua em inscritos e faturamento, mas não nos KPIs de pessoas.
+
 ## Eventos abertos e inscrições removidas (04/11/2026)
 
 A reconciliação por janela olha só `dt_pedido` dos últimos 30 dias. Por isso, uma

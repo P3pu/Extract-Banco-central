@@ -26,6 +26,7 @@ LOCAL_PORT = 15943
 RECONCILIATION_DAYS = 30
 RECONCILIATION_INTERVAL = timedelta(days=15)
 OPEN_EVENTS_INTERVAL = timedelta(hours=24)
+RELINK_DAYS = 400
 CONTROL_HEARTBEAT_SECONDS = 15
 ENTITIES = (("ativo", "pedido"), ("ativo", "pedido_evento"),
             ("magento", "sales_order"), ("magento", "sales_order_item"))
@@ -338,6 +339,38 @@ def bootstrap(conn, journal, since):
                 journal.record_rows(origin, entity, None, rows, selected)
 
 
+def _daily_core(settings, journal, assert_control):
+    """Depois dos cadastros: eventos por SKU e pessoas que chegaram atrasadas."""
+    from src.automation.core_refresh import ranges, target_ranges
+    from src.core import event_sync, person_dimension, runner
+    pg = settings.database("postgres")
+    os.environ.update(CORE_PG_HOST=pg.host, CORE_PG_PORT=str(pg.port),
+                      CORE_PG_DATABASE=pg.database, CORE_PG_USER=pg.user,
+                      CORE_PG_PASSWORD=pg.password, CORE_PG_SSLMODE="disable",
+                      CORE_PRODUCTION_APPROVAL="CORE_V1_APPROVED")
+    with runner.connect() as conn:
+        runner.validate_destination(conn, True)
+        conn.execute("SET max_parallel_workers_per_gather=0")
+        conn.execute("SET statement_timeout=600000")
+        assert_control()
+        pending = event_sync.sync(conn)
+        if pending:
+            # Recusa aqui, e não no ciclo seguinte: um diário grande demais travaria todos.
+            ranges({order for *_rest, order in pending if order is not None})
+            target_ranges({source for _o, _k, source, _p in pending})
+            journal.record_changes(pending)
+        assert_control()
+        since = datetime.now(timezone.utc).date() - timedelta(days=RELINK_DAYS)
+        print(f"CORE_PERSON_RELINK {person_dimension.relink_missing(conn, since)}", flush=True)
+
+
+def run_daily_core(settings, journal, failed, assert_control=lambda: None):
+    try:
+        _daily_core(settings, journal, assert_control)
+    except Exception as exc:
+        source_failed(failed, "core_diario", "eventos_pessoas", exc)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Automação local RAW -> CORE")
     parser.add_argument("command", choices=("check", "lock-status", "plan-core", "audit-core", "run-once", "core-only", "bootstrap"))
@@ -467,6 +500,8 @@ def main(argv=None):
                             run_open_events(settings, journal, failed, assert_control)
                         # A CORE processa o que as origens disponíveis carregaram.
                         result = run_core(settings, journal, assert_control)
+                        if aux:
+                            run_daily_core(settings, journal, failed, assert_control)
                         status = ("AUTOMATION_CYCLE_PARTIAL failed=" + ",".join(sorted(failed))
                                   if failed else "AUTOMATION_CYCLE_OK")
                         success_message = (f"{status} aux_steps={aux_steps} "

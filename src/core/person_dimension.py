@@ -21,6 +21,12 @@ import psycopg
 
 CONTACT_COLUMNS = {"cpf", "nome", "email"}
 CHUNK_SIZE = 1000
+# Poucos cadastros mudam de documento; muitos de uma vez indicam erro, não revisão.
+MAX_IDENTITY_REVIEW = 100
+
+
+class IdentityConflict(RuntimeError):
+    """O documento atual não bate com a pessoa já vinculada: não dá para decidir sozinho."""
 MIGRATION = (Path(__file__).resolve().parents[2]
              / "sql/core/v1/008_dim_pessoa_contato.sql")
 SOURCE_CONTRACT = {
@@ -209,7 +215,7 @@ def rotate_key(conn, key):
         for person_key, cpf in rows:
             digits = _valid_cpf(cpf)
             if digits is None:
-                raise RuntimeError("CPF validado ausente ou vínculo compartilhado; revisão necessária")
+                raise IdentityConflict("CPF validado ausente ou vínculo compartilhado; revisão necessária")
             tokens[person_key] = _cpf_token(digits, key)
         if len(set(tokens.values())) != len(tokens):
             raise RuntimeError("Token de CPF existente divergente")
@@ -387,10 +393,10 @@ def _upsert_profile(conn, key, contact, hmac_key=None):
         person_key, old_cpf, criterion, old_role, old_token, map_count = existing
         old_valid = _valid_cpf(old_cpf)
         if old_valid is not None and old_valid != digits:
-            raise RuntimeError("CPF de origem alterado; revisão de identidade necessária")
+            raise IdentityConflict("CPF de origem alterado; revisão de identidade necessária")
         if token is not None:
             if target is not None and target[0] != person_key:
-                raise RuntimeError("CPF já pertence a outra pessoa_key; revisão necessária")
+                raise IdentityConflict("CPF já pertence a outra pessoa_key; revisão necessária")
             if criterion == "SOURCE_ID" and map_count == 1:
                 conn.execute("""
                     UPDATE core.dim_pessoa
@@ -405,9 +411,9 @@ def _upsert_profile(conn, key, contact, hmac_key=None):
                     WHERE origem=%s AND tipo_identificador=%s AND id_pessoa_origem=%s
                 """, (origin, namespace, source_id))
             elif criterion != "CPF_VALIDO" or old_token != token:
-                raise RuntimeError("Vínculo de CPF divergente; revisão necessária")
+                raise IdentityConflict("Vínculo de CPF divergente; revisão necessária")
         elif criterion != "SOURCE_ID" or map_count != 1:
-            raise RuntimeError("CPF validado ausente ou vínculo compartilhado; revisão necessária")
+            raise IdentityConflict("CPF validado ausente ou vínculo compartilhado; revisão necessária")
 
     if token is not None:
         # Um CPF válido pode ter vários IDs de origem; contato preenchido não
@@ -476,7 +482,7 @@ def _bulk_upsert_profiles(conn, profiles, hmac_key):
            OR (b.cpf_token IS NULL AND d.criterio_identificacao<>'SOURCE_ID')
     """).fetchone()[0]
     if conflicts:
-        raise RuntimeError("Vínculos existentes exigem revisão de identidade")
+        raise IdentityConflict("Vínculos existentes exigem revisão de identidade")
     collision = conn.execute("""
         SELECT COUNT(*) FROM pg_temp.core_person_profile_batch b
         JOIN core.dim_pessoa d ON d.cpf_token_seguro=b.cpf_token
@@ -609,6 +615,68 @@ def sync_changed(conn, orders, inscriptions) -> dict[str, int | bool]:
               AND f.participante_key IS DISTINCT FROM m.pessoa_key
         """, (ids, ids))
     return {"contacts": len(profiles), "installed": True, "enabled": True}
+
+
+def sync_isolating(conn, orders, inscriptions):
+    """`sync_changed` em que um cadastro em conflito não para os demais.
+
+    O conflito fica sem vínculo novo e vai para o log. A pessoa nunca é trocada aqui.
+    """
+    items = [("orders", origin, value) for origin, ids in orders.items() for value in sorted(ids)]
+    items += [("inscriptions", origin, value) for origin, ids in inscriptions.items() for value in sorted(ids)]
+    review = []
+
+    def run(part):
+        selected = {"orders": {}, "inscriptions": {}}
+        for scope, origin, value in part:
+            selected[scope].setdefault(origin, set()).add(value)
+        try:
+            with conn.transaction():
+                return sync_changed(conn, selected["orders"], selected["inscriptions"])
+        except IdentityConflict:
+            if len(part) <= 1:
+                if not part:
+                    raise
+                review.append(part[0])
+                if len(review) > MAX_IDENTITY_REVIEW:
+                    raise RuntimeError("Conflitos de identidade demais; revisão necessária") from None
+                return {"contacts": 0, "installed": True, "enabled": True}
+            middle = len(part) // 2
+            left, right = run(part[:middle]), run(part[middle:])
+            return {**right, "contacts": left["contacts"] + right["contacts"]}
+
+    result = run(items)
+    for scope, origin, value in review:
+        print(f"CORE_PERSON_REVISAR_IDENTIDADE {scope} {origin} {value}", flush=True)
+    return {**result, "revisar": len(review)}
+
+
+def relink_missing(conn, since: date, maximum: int = 20000,
+                   chunk: int = 1000) -> dict[str, int]:
+    """Religa inscrições sem pessoa cujo cliente ou vínculo chegou depois.
+
+    Os cadastros carregam a cada 24 horas e a inscrição, a cada hora: sem isto, a
+    inscrição processada antes do cadastro nunca era revista.
+    """
+    magento = [row[0] for row in conn.execute("""
+        SELECT f.inscricao_id_origem FROM core.fato_inscricao f
+        JOIN staging.magento_item_cliente i ON i.item_id=f.inscricao_id_origem
+        JOIN staging.magento_cliente c ON c.cliente_id=i.cliente_id
+        WHERE f.origem='magento' AND f.participante_key IS NULL AND f.data_evento>=%s
+          AND i.cliente_ambiguo IS FALSE AND i.cliente_id>0
+        ORDER BY f.inscricao_id_origem DESC LIMIT %s
+    """, (since, maximum)).fetchall()]
+    ativo = [row[0] for row in conn.execute("""
+        SELECT inscricao_id_origem FROM core.fato_inscricao
+        WHERE origem='ativo' AND participante_key IS NULL
+          AND participante_id_origem IS NOT NULL AND data_evento>=%s
+        ORDER BY inscricao_id_origem DESC LIMIT %s
+    """, (since, maximum)).fetchall()]
+    review = 0
+    for origin, ids in (("magento", magento), ("ativo", ativo)):
+        for start in range(0, len(ids), chunk):
+            review += sync_isolating(conn, {}, {origin: set(ids[start:start + chunk])})["revisar"]
+    return {"magento": len(magento), "ativo": len(ativo), "revisar": review}
 
 
 def backfill_since(conn, since: date, maximum: int = 1000,

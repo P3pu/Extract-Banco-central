@@ -13,7 +13,8 @@ WITH fonte AS (
                 WHEN i.usuario_id>0 THEN 'Usuario' END
                 participante_namespace_origem,
            combo.combo_key,
-           core.try_date(i.data_evento) data_evento,
+           -- Mesmo SKU: a data do Magento, gravada em dim_evento, vale para o Ativo.
+           COALESCE(de.data_evento,core.try_date(i.data_evento)) data_evento,
            i.data_evento::text data_evento_original,
            i.campanha_salesforce_id::text sku_evento_origem,
            NULL::text sku_inscricao_magento,
