@@ -1,5 +1,7 @@
 # RAW R1 — proposta de índice Magento (revisão, sem implantação)
 
+> **Documento histórico.** Registra uma proposta de índice que não estava aplicada em 04/11/2026 e não descreve a operação atual. Veja o [índice](README.md).
+
 ## Escopo e decisão
 
 Adicionar uma única vez um índice B-tree simples em

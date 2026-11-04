@@ -25,6 +25,12 @@
 | `taxa_servico_ativo` | Inscrição Ativo | `staging.ativo_inscricao.taxa`; não é kit nem receita própria. |
 | `valor_liquido_inscricao` | Inscrição | Ativo `GREATEST(0,preço-desconto-kit)` válido; Magento somente quando cabeçalho/itens e quantidade conciliados. |
 | `classificacao_comercial` | Inscrição | GRUPOS > CORTESIA > SITE; cupom sem classificação não deixa pendente. |
+| `classificacao_venda` | Inscrição | A mesma classificação, como rótulo: `Grupos`, `Cortesia` ou `Site`. |
+| `contabiliza_inscricao` | Inscrição | Verdadeiro quando a inscrição entra em inscritos. |
+| `contabiliza_bruto` | Inscrição | Verdadeiro quando o valor bruto entra no faturamento. |
+| `motivo_elegibilidade` | Inscrição | Por que a inscrição conta ou não, como `REMOVIDA_NA_ORIGEM` ou `COMBO_MIGRADO_ATIVO`. |
+| `evento_produto` | Evento Ativo | Produtos de combo cadastrados como evento. Ficam fora de combos e de inscritos. |
+| `combo_vendido` | Combo (view) | Um registro por combo vendido, sem dupla contagem entre canais. |
 | `participante_id_origem` + `participante_namespace_origem` | Inscrição Ativo | `usuario_balcao_id` quando maior que zero; senão `usuario_id`; ID zero conta como ausente. Magento NULL. |
 | `combo_key` | Inscrição Ativo | Combo do pedido se mapeado; não prova composição. |
 | `data_evento` | Inscrição | Ativo segue `dim_evento` e, sem ela, a data da inscrição. |

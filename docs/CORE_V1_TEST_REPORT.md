@@ -1,5 +1,7 @@
 # Relatório de execução — CORE V1
 
+> **Documento histórico.** Registra a homologação local da CORE V1 e não descreve a operação atual. Veja o [índice](README.md).
+
 Data de homologação local: 2026-10-22. Branch `codex/core-v1-implementation`.
 
 ## Implementado e testado localmente

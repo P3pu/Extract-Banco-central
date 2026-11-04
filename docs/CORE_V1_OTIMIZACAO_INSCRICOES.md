@@ -1,5 +1,7 @@
 # CORE V1 — carga histórica de inscrições com cache de sessão
 
+> **Referência técnica.** Explica o cache de sessão usado ao recalcular muitas inscrições. A operação atual está em [OPERACAO.md](OPERACAO.md).
+
 Em 2026-10-23, a estrutura CORE e os pedidos foram carregados no banco
 `Atendimento`. O primeiro lote de inscrições (IDs 0–999) foi revertido por
 `statement_timeout`; nenhuma inscrição ficou gravada. `EXPLAIN` sem

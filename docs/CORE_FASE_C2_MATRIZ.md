@@ -1,5 +1,7 @@
 # Matriz de reconciliação CORE — C2.1
 
+> **Documento histórico.** Registra a matriz de reconciliação histórica e não descreve a operação atual. Veja o [índice](README.md).
+
 **Estado:** ainda não há observações da C2 no Naruto. `—` significa dado não
 apurado, não zero. Todos os resultados abaixo são `NAO_COBERTO` até execução
 autorizada e evidência registrada. Os esperados vêm de

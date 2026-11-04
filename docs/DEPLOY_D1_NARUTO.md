@@ -1,5 +1,7 @@
 # Deploy D1 — preparação, sem ativação
 
+> **Documento histórico.** Registra a preparação com Docker no Naruto, substituída pelo executor sem Docker e não descreve a operação atual. Veja o [índice](README.md).
+
 **Estado:** proposta derivada de `review/raw-index-r1-magento` (`752b40c`).
 O diagnóstico D2 de 21/10/2026 foi concluído por SSH autenticado e somente
 leitura, com validação da chave do servidor. O inventário e os bloqueios estão

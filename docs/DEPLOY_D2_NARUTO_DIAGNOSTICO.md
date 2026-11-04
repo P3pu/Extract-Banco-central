@@ -1,5 +1,7 @@
 # D2 — diagnóstico somente leitura do Naruto
 
+> **Documento histórico.** Registra o diagnóstico do Naruto, em uma implantação substituída pelo executor sem Docker e não descreve a operação atual. Veja o [índice](README.md).
+
 **Data:** 21/10/2026. **Escopo:** inventário SSH do host e revisão da proposta
 D1; nenhuma implantação foi autorizada. A sessão SSH autenticada usou a chave
 de host previamente conferida. Os comandos de inventário foram executados

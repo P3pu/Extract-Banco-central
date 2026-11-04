@@ -1,8 +1,8 @@
 # CORE V1 — regras implementadas
 
 Versão das regras: `CORE_V1_20261022` (inscrições Ativo: `CORE_V1_20261030`). A CORE está carregada no `Atendimento`
-desde 23/10/2026 (migrações 001, 002, 006, 007 e 008) e é mantida pela
-automação local horária (`docs/AUTOMACAO_LOCAL_RAW_CORE.md`). O executor CORE
+desde 23/10/2026 ([mapa das migrações](../sql/core/v1/README.md)) e é mantida pela
+automação horária no servidor (`docs/AUTOMACAO_LOCAL_RAW_CORE.md`). O executor CORE
 é separado do D1/RAW e lê somente as views STAGING PostgreSQL. A view de
 indicadores `core.fato_inscricao_indicadores_validos` permanece `WHERE FALSE`.
 
@@ -215,6 +215,6 @@ ambas as origens eram invalidadas sem nova derivação. Alterações em cadastro
 inscrições afetada; a reconciliação deve concluir antes de qualquer abertura
 da view. O runner usa lock global, transações, auditoria, hash de dependências
 e bloqueio de `Atendimento` sem dois sinais explícitos de aprovação. Não há
-rota FULL nem leitura MySQL na CORE. A automação local horária leva à CORE só
+rota FULL nem leitura MySQL na CORE. A automação horária leva à CORE só
 os IDs RAW alterados, atualiza os cadastros RAW uma vez por dia e recusa rodar
 se a view de indicadores estiver aberta.

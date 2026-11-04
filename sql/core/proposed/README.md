@@ -1,5 +1,7 @@
 # Revisão dos SQL CORE propostos
 
+> **Documento histórico.** `001` e `002` foram aplicados em 23/10/2026 como as primeiras migrações da CORE ([mapa](../v1/README.md)). O texto abaixo é a revisão anterior à aplicação.
+
 Estes arquivos são propostas, **não foram aplicados**. Não executar no banco
 `Atendimento` antes de aprovação explícita, homologação e backup. A RAW, a
 STAGING e a CORE em produção não foram alteradas nesta revisão.

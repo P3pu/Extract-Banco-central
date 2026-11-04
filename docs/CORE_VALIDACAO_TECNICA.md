@@ -1,5 +1,7 @@
 # CORE — validação técnica pré-DDL
 
+> **Documento histórico.** Registra o diagnóstico feito antes de criar a CORE e não descreve a operação atual. Veja o [índice](README.md).
+
 Data: 2026-10-19. Escopo: diagnóstico somente leitura de `Atendimento`, MySQL Ativo,
 SQL versionado e critérios do `Dicionario_de_Dados_CORE_v1.xlsx`. Nenhuma carga,
 migração ou alteração de RAW/STAGING/CORE foi executada. Os números abaixo são
