@@ -193,6 +193,14 @@ fato, mas fica com `motivo_elegibilidade='REMOVIDA_NA_ORIGEM'` e não conta. Se
 voltar à origem, a marca sai. Pedido antigo de evento encerrado há mais de 30 dias
 continua fora da releitura diária: só uma releitura completa o alcança.
 
+Por isso, uma vez por mês civil, a partir de 12/2026, o ciclo faz também a releitura
+completa de `sa_pedido` e `sa_pedido_evento`
+(`src/pipeline/ativo_releitura_completa.py`, cerca de 20 minutos). Grava só o que
+mudou e aplica a mesma marca de removida, com o limite de 5.000 novas por releitura.
+Se o túnel cair, o cursor em `ativo_releitura.json` faz o ciclo seguinte continuar de
+onde parou. O que mudou vai para um diário próprio (`ativo_releitura.sqlite`), porque
+uma leitura completa espalha IDs além do limite de faixas do ciclo horário.
+
 ## Reprocessamento e segurança
 
 Ranges têm no máximo 100.000 IDs inclusivos. Eventos, combos e pedidos

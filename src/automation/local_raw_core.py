@@ -27,6 +27,9 @@ RECONCILIATION_DAYS = 30
 RECONCILIATION_INTERVAL = timedelta(days=15)
 OPEN_EVENTS_INTERVAL = timedelta(hours=24)
 RELINK_DAYS = 400
+# Pedidos do Ativo chegam ao ID 121 milhões: até 1.200 faixas de 100 mil. Acima disso, revisão.
+FULL_REREAD_MAX_ORDER_RANGES = 2000
+FULL_REREAD_MAX_INSCRIPTION_RANGES = 1000
 CONTROL_HEARTBEAT_SECONDS = 15
 ENTITIES = (("ativo", "pedido"), ("ativo", "pedido_evento"),
             ("magento", "sales_order"), ("magento", "sales_order_item"))
@@ -235,6 +238,59 @@ def run_open_events(settings, journal, failed, assert_control=lambda: None):
         ativo_eventos_abertos.run(settings, on_rows=journal.record_rows)
     except Exception as exc:
         source_failed(failed, "ativo", "eventos_abertos", exc)
+
+
+def full_reread_paths():
+    state = journal_path()
+    return state.with_name("ativo_releitura.json"), state.with_name("ativo_releitura.sqlite")
+
+
+def full_reread_due(conn):
+    from src.pipeline import ativo_releitura_completa
+    return ativo_releitura_completa.is_due(conn, full_reread_paths()[0])
+
+
+def run_full_reread(settings, failed, assert_control=lambda: None):
+    """Diário próprio: uma leitura completa espalha IDs além do limite do ciclo horário."""
+    from src.pipeline import ativo_releitura_completa
+    assert_control()
+    state, pending = full_reread_paths()
+    journal = ChangeJournal(pending)
+    try:
+        ativo_releitura_completa.run(settings, state, journal.record_rows, assert_control)
+    except Exception as exc:
+        source_failed(failed, "ativo", "releitura_completa", exc)
+    finally:
+        journal.close()
+
+
+def run_full_reread_core(settings, failed, assert_control=lambda: None):
+    """Leva à CORE o que a releitura mudou. Só limpa o diário depois de concluir."""
+    path = full_reread_paths()[1]
+    if not path.exists():
+        return
+    journal = ChangeJournal(path)
+    try:
+        pending = journal.snapshot()
+        if not pending:
+            return
+        from src.core import runner
+        pg = settings.database("postgres")
+        os.environ.update(CORE_PG_HOST=pg.host, CORE_PG_PORT=str(pg.port),
+                          CORE_PG_DATABASE=pg.database, CORE_PG_USER=pg.user,
+                          CORE_PG_PASSWORD=pg.password, CORE_PG_SSLMODE="disable",
+                          CORE_PRODUCTION_APPROVAL="CORE_V1_APPROVED")
+        with runner.connect() as conn:
+            runner.validate_destination(conn, True)
+            result = refresh(conn, pending, assert_control, max_order_ranges=FULL_REREAD_MAX_ORDER_RANGES,
+                             max_inscription_ranges=FULL_REREAD_MAX_INSCRIPTION_RANGES)
+        assert_control()
+        journal.clear()
+        print(f"CORE_RELEITURA_COMPLETA itens={len(pending)} core={result}", flush=True)
+    except Exception as exc:
+        source_failed(failed, "core_releitura", "ativo", exc)
+    finally:
+        journal.close()
 
 
 def source_failed(failed, origin, step, exc):
@@ -498,10 +554,13 @@ def main(argv=None):
                         failed |= run_raw(settings, journal, due, assert_control)
                         if "ativo" not in failed and open_events_due(conn):
                             run_open_events(settings, journal, failed, assert_control)
+                        if "ativo" not in failed and full_reread_due(conn):
+                            run_full_reread(settings, failed, assert_control)
                         # A CORE processa o que as origens disponíveis carregaram.
                         result = run_core(settings, journal, assert_control)
                         if aux:
                             run_daily_core(settings, journal, failed, assert_control)
+                        run_full_reread_core(settings, failed, assert_control)
                         status = ("AUTOMATION_CYCLE_PARTIAL failed=" + ",".join(sorted(failed))
                                   if failed else "AUTOMATION_CYCLE_OK")
                         success_message = (f"{status} aux_steps={aux_steps} "

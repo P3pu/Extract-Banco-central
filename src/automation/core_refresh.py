@@ -79,7 +79,8 @@ def _chunks(values, size=1000):
         yield values[start:start + size]
 
 
-def refresh(conn, pending, assert_control=lambda: None):
+def refresh(conn, pending, assert_control=lambda: None, *,
+            max_order_ranges=MAX_RANGES_PER_SCOPE, max_inscription_ranges=MAX_INSCRIPTION_RANGES):
     if not pending:
         return {"orders": 0, "inscriptions": 0}
     definition = conn.execute(
@@ -88,8 +89,9 @@ def refresh(conn, pending, assert_control=lambda: None):
     if "where false" not in definition.lower():
         raise RuntimeError("Gate de indicadores CORE aberto; automação recusada")
     orders, inscriptions = affected_ids(conn, pending)
-    order_ranges = ranges(set().union(*orders.values()))
-    inscription_ranges = target_ranges(set().union(*inscriptions.values()))
+    order_ranges = ranges(set().union(*orders.values()), maximum=max_order_ranges)
+    inscription_ranges = target_ranges(set().union(*inscriptions.values()),
+                                       maximum=max_inscription_ranges)
     as_of = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
     for low, high in order_ranges:
         assert_control()
