@@ -50,6 +50,29 @@ def validate_schema(columns, indexes):
         raise ValueError("Índice id_pedido ausente")
 
 
+def by_event_query(event_id, batch_size, cursor=None):
+    """Índice id_evento: o InnoDB já guarda a PK nele, sem filesort."""
+    if batch_size <= 0:
+        raise ValueError("Lote inválido")
+    fields = ", ".join(f"pe.`{name}`" for name in COLUMNS)
+    where, params = ["pe.id_evento = %s"], [event_id]
+    if cursor is not None:
+        where.append("pe.id_pedido_evento > %s")
+        params.append(cursor)
+    params.append(batch_size)
+    return (f"SELECT {fields} FROM sa_pedido_evento pe FORCE INDEX (id_evento) "
+            f"WHERE {' AND '.join(where)} ORDER BY pe.id_pedido_evento LIMIT %s", tuple(params))
+
+
+def by_ids_query(ids):
+    if not ids:
+        raise ValueError("Lista de IDs vazia")
+    fields = ", ".join(f"pe.`{name}`" for name in COLUMNS)
+    marks = ", ".join(["%s"] * len(ids))
+    return (f"SELECT {fields} FROM sa_pedido_evento pe FORCE INDEX (PRIMARY) "
+            f"WHERE pe.id_pedido_evento IN ({marks})", tuple(ids))
+
+
 def page_query(mode, batch_size, upper_id, cursor=None, cutoff=None):
     if batch_size <= 0 or mode not in {"FULL", "INCREMENTAL", "RECONCILIATION"}:
         raise ValueError("Modo ou lote inválido")

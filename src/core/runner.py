@@ -28,6 +28,7 @@ MIGRATIONS = (
     SQL / "007_core_alerta_zero_id.sql",
     SQL / "008_evento_produto.sql",
     SQL / "009_combo_vendido.sql",
+    SQL / "015_inscricao_removida.sql",
 )
 STEPS = {
     "events": ("010_eventos.sql", "011_evento_map.sql",

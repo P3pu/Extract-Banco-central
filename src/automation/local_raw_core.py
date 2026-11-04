@@ -25,6 +25,7 @@ LOCK_ID = 7248319999
 LOCAL_PORT = 15943
 RECONCILIATION_DAYS = 30
 RECONCILIATION_INTERVAL = timedelta(days=15)
+OPEN_EVENTS_INTERVAL = timedelta(hours=24)
 CONTROL_HEARTBEAT_SECONDS = 15
 ENTITIES = (("ativo", "pedido"), ("ativo", "pedido_evento"),
             ("magento", "sales_order"), ("magento", "sales_order_item"))
@@ -213,6 +214,26 @@ def due_reconciliations(conn):
         if previous is None or now - previous >= RECONCILIATION_INTERVAL:
             due.append(entity)
     return due
+
+
+def open_events_due(conn):
+    from src.pipeline.ativo_eventos_abertos import SOURCE_TABLE
+    now, previous = conn.execute(
+        "SELECT clock_timestamp(),max(finished_at) FROM raw._etl_runs "
+        "WHERE source_system='ativo' AND mode='RECONCILIATION' "
+        "AND status='SUCCESS' AND source_table=%s", (SOURCE_TABLE,)
+    ).fetchone()
+    return previous is None or now - previous >= OPEN_EVENTS_INTERVAL
+
+
+def run_open_events(settings, journal, failed, assert_control=lambda: None):
+    """Sem o Ativo no ciclo, fica para o próximo: a execução não avançou."""
+    from src.pipeline import ativo_eventos_abertos
+    assert_control()
+    try:
+        ativo_eventos_abertos.run(settings, on_rows=journal.record_rows)
+    except Exception as exc:
+        source_failed(failed, "ativo", "eventos_abertos", exc)
 
 
 def source_failed(failed, origin, step, exc):
@@ -442,6 +463,8 @@ def main(argv=None):
                             assert_control) if aux else (0, set())
                         due = due_reconciliations(conn)
                         failed |= run_raw(settings, journal, due, assert_control)
+                        if "ativo" not in failed and open_events_due(conn):
+                            run_open_events(settings, journal, failed, assert_control)
                         # A CORE processa o que as origens disponíveis carregaram.
                         result = run_core(settings, journal, assert_control)
                         status = ("AUTOMATION_CYCLE_PARTIAL failed=" + ",".join(sorted(failed))

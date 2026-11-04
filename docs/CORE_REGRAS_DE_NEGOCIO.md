@@ -166,6 +166,17 @@ origem: `STATUS_CONTRADITORIO`, `STATUS_ESPECIAL`, `CANCELAMENTO_PARCIAL`,
 `CUPOM_HEADER_AUSENTE`, `EVENTO_SEM_MAPA`, `ORFAO_PEDIDO`, `COMBO_COMPOSICAO`
 e `DATA_INVALIDA`.
 
+## Eventos abertos e inscrições removidas (04/11/2026)
+
+A reconciliação por janela olha só `dt_pedido` dos últimos 30 dias. Por isso, uma
+vez por dia a automação também relê pedidos e inscrições de eventos com data a
+partir de 30 dias atrás (`src/pipeline/ativo_eventos_abertos.py`), gravando e
+levando à CORE só o que mudou. Inscrição que não está mais na origem, confirmada
+pela PK, entra em `core.inscricao_removida_origem`: a linha continua na RAW e na
+fato, mas fica com `motivo_elegibilidade='REMOVIDA_NA_ORIGEM'` e não conta. Se
+voltar à origem, a marca sai. Pedido antigo de evento encerrado há mais de 30 dias
+continua fora da releitura diária: só uma releitura completa o alcança.
+
 ## Reprocessamento e segurança
 
 Ranges têm no máximo 100.000 IDs inclusivos. Eventos, combos e pedidos

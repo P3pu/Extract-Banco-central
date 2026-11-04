@@ -6,6 +6,7 @@ WITH dados AS (
            f.flag_pedido_nao_encontrado, f.flag_evento_teste, f.data_evento,
            f.combo_key,
            (f.evento_id_origem IN (SELECT evento_id_origem FROM core.evento_produto)) produto,
+           (f.inscricao_id_origem IN (SELECT inscricao_id_origem FROM core.inscricao_removida_origem WHERE origem='ativo')) removida,
            i.status_detalhado_id, i.status_pedido_id,
            i.local_inscricao_codigo, i.preco, i.desconto_individual,
            i.taxa, i.categoria, i.cupom_individual_id,
@@ -21,7 +22,8 @@ WITH dados AS (
                 THEN 0::numeric(20,4)
                 ELSE core.try_numeric_20_4(i.desconto_individual) END desconto_num,
            (i.status_detalhado_id IN (5,6,7,8)
-             OR i.status_pedido_id=5) cancelada,
+             OR i.status_pedido_id=5
+             OR f.inscricao_id_origem IN (SELECT inscricao_id_origem FROM core.inscricao_removida_origem WHERE origem='ativo')) cancelada,
            (i.status_detalhado_id IN (0,9,10,11,12,13)) status_elegivel,
            (i.status_detalhado_id IS NULL
              OR i.status_detalhado_id NOT IN (0,5,6,7,8,9,10,11,12,13))
@@ -121,6 +123,7 @@ UPDATE core.fato_inscricao f SET
                            AND d.local_inscricao_codigo=2 THEN false
                           WHEN d.elegivel IS FALSE THEN false END,
     motivo_elegibilidade=CASE WHEN d.produto THEN 'PRODUTO_NAO_INSCRICAO'
+                              WHEN d.removida THEN 'REMOVIDA_NA_ORIGEM'
                               WHEN d.cancelada THEN 'CANCELAMENTO_PREVALECE'
                               WHEN d.status_pendente THEN 'STATUS_ESPECIAL'
                               WHEN d.status_pedido_id=1
@@ -175,4 +178,6 @@ WHERE f.inscricao_key=d.inscricao_key
        OR f.derivado_de_hash IS DISTINCT FROM f.conteudo_hash
        OR f.versao_regras_derivacao IS DISTINCT FROM 'CORE_V1_20261030'
        -- A lista de produtos não entra no hash: só os eventos afetados são regravados.
-       OR d.produto <> (f.motivo_elegibilidade IS NOT DISTINCT FROM 'PRODUTO_NAO_INSCRICAO'));
+       OR d.produto <> (f.motivo_elegibilidade IS NOT DISTINCT FROM 'PRODUTO_NAO_INSCRICAO')
+       -- A marca de removida também não entra no hash; vale nos dois sentidos.
+       OR (NOT d.produto AND d.removida <> (f.motivo_elegibilidade IS NOT DISTINCT FROM 'REMOVIDA_NA_ORIGEM')));
