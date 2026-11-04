@@ -611,6 +611,34 @@ def sync_changed(conn, orders, inscriptions) -> dict[str, int | bool]:
     return {"contacts": len(profiles), "installed": True, "enabled": True}
 
 
+def relink_missing(conn, since: date, maximum: int = 20000,
+                   chunk: int = 1000) -> dict[str, int]:
+    """Religa inscrições sem pessoa cujo cliente ou vínculo chegou depois.
+
+    Os cadastros carregam a cada 24 horas e a inscrição, a cada hora: sem isto, a
+    inscrição processada antes do cadastro nunca era revista.
+    """
+    magento = [row[0] for row in conn.execute("""
+        SELECT f.inscricao_id_origem FROM core.fato_inscricao f
+        JOIN staging.magento_item_cliente i ON i.item_id=f.inscricao_id_origem
+        JOIN staging.magento_cliente c ON c.cliente_id=i.cliente_id
+        WHERE f.origem='magento' AND f.participante_key IS NULL AND f.data_evento>=%s
+          AND i.cliente_ambiguo IS FALSE AND i.cliente_id>0
+        ORDER BY f.inscricao_id_origem DESC LIMIT %s
+    """, (since, maximum)).fetchall()]
+    ativo = [row[0] for row in conn.execute("""
+        SELECT inscricao_id_origem FROM core.fato_inscricao
+        WHERE origem='ativo' AND participante_key IS NULL
+          AND participante_id_origem IS NOT NULL AND data_evento>=%s
+        ORDER BY inscricao_id_origem DESC LIMIT %s
+    """, (since, maximum)).fetchall()]
+    for origin, ids in (("magento", magento), ("ativo", ativo)):
+        for start in range(0, len(ids), chunk):
+            with conn.transaction():
+                sync_changed(conn, {}, {origin: set(ids[start:start + chunk])})
+    return {"magento": len(magento), "ativo": len(ativo)}
+
+
 def backfill_since(conn, since: date, maximum: int = 1000,
                    until: date | None = None) -> dict[str, int]:
     """Preenche contatos de um período, com limite e transação por chamada.

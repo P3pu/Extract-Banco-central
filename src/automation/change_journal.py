@@ -49,6 +49,12 @@ class ChangeJournal:
                 VALUES (?,?,?,?) ON CONFLICT(origin,kind,source_id)
                 DO UPDATE SET order_id=excluded.order_id""", changes)
 
+    def record_changes(self, changes):
+        with self.db:
+            self.db.executemany("""INSERT INTO pending(origin,kind,source_id,order_id)
+                VALUES (?,?,?,?) ON CONFLICT(origin,kind,source_id)
+                DO UPDATE SET order_id=excluded.order_id""", changes)
+
     def snapshot(self):
         return self.db.execute(
             "SELECT origin,kind,source_id,order_id FROM pending ORDER BY origin,kind,source_id"

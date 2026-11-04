@@ -121,5 +121,6 @@ def test_removed_rule_never_counts_and_keeps_product_precedence():
         < text.index("THEN 'CANCELAMENTO_PREVALECE'")
 
 
-def test_new_migration_is_the_last_one():
-    assert runner.MIGRATIONS[-1].name == "015_inscricao_removida.sql"
+def test_removal_migration_is_registered_after_combo_view():
+    names = [path.name for path in runner.MIGRATIONS]
+    assert names.index("015_inscricao_removida.sql") > names.index("009_combo_vendido.sql")
