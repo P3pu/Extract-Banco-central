@@ -11,6 +11,7 @@ Descrevem como o sistema funciona hoje e são atualizados junto com o código.
 | [OPERACAO.md](OPERACAO.md) | Conferir saúde, resolver falhas, rotinas | Sintomas, logs ou rotinas |
 | [AUTOMACAO_LOCAL_RAW_CORE.md](AUTOMACAO_LOCAL_RAW_CORE.md) | Etapas do ciclo, linhas de log, limites | O ciclo ou suas etapas |
 | [DEPLOY_SERVIDOR_SEM_DOCKER.md](DEPLOY_SERVIDOR_SEM_DOCKER.md) | Servidor, arquivos, instalação, versões | O servidor ou uma release |
+| [KPIS_SALES_GROWTH.md](KPIS_SALES_GROWTH.md) | Objetivo e definição dos KPIs de crescimento de vendas | Um KPI ou uma decisão sobre eles |
 | [CORE_REGRAS_DE_NEGOCIO.md](CORE_REGRAS_DE_NEGOCIO.md) | Contagem, classificação, eventos, combos | Uma regra de negócio |
 | [CORE_V1_DICIONARIO.md](CORE_V1_DICIONARIO.md) | Origem e regra dos campos da CORE | Tabela, view ou campo CORE |
 | [CORE_DIM_PESSOA_CONTATO.md](CORE_DIM_PESSOA_CONTATO.md) | Pessoas, CPF, chave HMAC, KPIs | Identidade ou KPIs de pessoas |

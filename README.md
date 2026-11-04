@@ -33,6 +33,7 @@ A view `core.fato_inscricao_indicadores_validos` fica fechada de propósito, com
 | Ver se está tudo funcionando ou resolver uma falha | [Operação](docs/OPERACAO.md) |
 | Entender as etapas do ciclo | [Automação](docs/AUTOMACAO_LOCAL_RAW_CORE.md) |
 | Saber como uma inscrição é contada ou classificada | [Regras de negócio](docs/CORE_REGRAS_DE_NEGOCIO.md) |
+| Entender os KPIs de crescimento de vendas | [Sales Growth](docs/KPIS_SALES_GROWTH.md) |
 | Saber de onde vem um campo da CORE | [Dicionário](docs/CORE_V1_DICIONARIO.md) |
 | Entender pessoas, CPF e KPIs | [Pessoas](docs/CORE_DIM_PESSOA_CONTATO.md) |
 | Instalar uma versão no servidor | [Deploy](docs/DEPLOY_SERVIDOR_SEM_DOCKER.md) |
