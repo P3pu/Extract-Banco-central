@@ -43,6 +43,15 @@ def validate_schema(columns, indexes):
         raise ValueError("Índice dt_pedido ausente")
 
 
+def by_ids_query(ids):
+    if not ids:
+        raise ValueError("Lista de IDs vazia")
+    fields = ", ".join(f"`{name}`" for name in COLUMNS)
+    marks = ", ".join(["%s"] * len(ids))
+    return (f"SELECT {fields} FROM sa_pedido FORCE INDEX (PRIMARY) "
+            f"WHERE id_pedido IN ({marks})", tuple(ids))
+
+
 def page_query(mode, batch_size, upper_id, cursor=None, cutoff=None):
     if batch_size <= 0 or mode not in {"FULL", "INCREMENTAL", "RECONCILIATION"}:
         raise ValueError("Modo ou lote inválido")

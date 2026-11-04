@@ -28,6 +28,7 @@ MIGRATIONS = (
     SQL / "007_core_alerta_zero_id.sql",
     SQL / "008_evento_produto.sql",
     SQL / "009_combo_vendido.sql",
+    SQL / "015_inscricao_removida.sql",
 )
 STEPS = {
     "events": ("010_eventos.sql", "011_evento_map.sql",
@@ -55,7 +56,8 @@ REQUIRED = {
                                  "preco": "numeric", "desconto_individual": "text"},
     "staging.magento_inscricao": {"inscricao_id": "int", "pedido_id": "int",
                                    "valor_bruto": "numeric"},
-    "staging.magento_item_pedido": {"item_id": "int", "pedido_id": "int"},
+    "staging.magento_item_pedido": {"item_id": "int", "pedido_id": "int",
+                                    "nome_item": "text"},
     "staging.magento_bundle_componente": {"inscricao_item_id": "int"},
     "staging.magento_pedido_regra": {"pedido_id": "int"},
     "staging.ativo_categoria": {"categoria_id": "int", "valor_kit": "numeric"},
@@ -95,7 +97,7 @@ INSCRIPTION_CACHE = (
         SELECT pedido_id,etiqueta FROM staging.magento_pedido_regra
     """, ("pedido_id",)),
     ("core_v1_magento_bundle_pai_cache", """
-        SELECT item_id,pedido_id,eh_bundle,quantidade_pedida,
+        SELECT item_id,pedido_id,eh_bundle,nome_item,quantidade_pedida,
                quantidade_cancelada,quantidade_reembolsada,valor_linha,desconto
         FROM staging.magento_item_pedido WHERE eh_bundle
     """, ("item_id", "pedido_id")),

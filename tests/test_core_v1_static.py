@@ -262,3 +262,18 @@ def test_magento_combo_migrated_from_ativo_is_not_counted():
     assert "f.motivo_elegibilidade IS DISTINCT FROM 'COMBO_MIGRADO_ATIVO'" in mag
     assert "combo_migrado_ativo" not in mag.split("dep_hash", 1)[0].split("md5(ROW(", 1)[1]
     assert runner.REQUIRED["staging.magento_pedido"]["protocolo"] == "text"
+
+
+def test_magento_bundle_name_is_courtesy_category_below_groups():
+    mag = (SQL / "041_inscricao_magento.sql").read_text(encoding="utf-8")
+    assert "(COALESCE(pai.nome_item,'') ~* 'cortesia|patrocinador') categoria_cortesia" in mag
+    assert "(etiqueta_cortesia OR categoria_cortesia OR valor_bruto=0) sinal_cortesia" in mag
+    assert "WHEN d.categoria_cortesia THEN 'CATEGORIA_CORTESIA'" in mag
+    assert "c.categoria_cortesia" in mag.split("md5(ROW(", 1)[1].split("dep_hash", 1)[0]
+    # Grupos continua na frente (GRUPOS > CORTESIA > SITE).
+    assert mag.index("WHEN d.sinal_grupos THEN 'Grupos'") < mag.index("WHEN d.sinal_cortesia THEN 'Cortesia'")
+    # O cache de sessão precisa levar o nome do bundle, ou a regra quebra em lotes.
+    pai = next(query for name, query, _ in runner.INSCRIPTION_CACHE
+               if name == "core_v1_magento_bundle_pai_cache")
+    assert "nome_item" in pai
+    assert runner.REQUIRED["staging.magento_item_pedido"]["nome_item"] == "text"

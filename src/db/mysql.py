@@ -333,6 +333,23 @@ class MySQLReader:
             cursor.execute(f"SELECT {aggregate}, MAX(id_pedido_evento) FROM sa_pedido_evento")
             return cursor.fetchone()
 
+    def _ativo_fetch(self, query, params):
+        with self._connection.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
+
+    def ativo_pedido_by_ids(self, *, ids):
+        from src.sources.ativo.pedido import by_ids_query
+        return self._ativo_fetch(*by_ids_query(ids))
+
+    def ativo_pedido_evento_by_ids(self, *, ids):
+        from src.sources.ativo.pedido_evento import by_ids_query
+        return self._ativo_fetch(*by_ids_query(ids))
+
+    def ativo_pedido_evento_by_event(self, *, event_id, batch_size, cursor=None):
+        from src.sources.ativo.pedido_evento import by_event_query
+        return self._ativo_fetch(*by_event_query(event_id, batch_size, cursor))
+
     def ativo_pedido_evento_page(self, **kwargs):
         from src.sources.ativo.pedido_evento import page_query
         query, params = page_query(**kwargs)

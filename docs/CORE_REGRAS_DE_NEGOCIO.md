@@ -73,7 +73,10 @@ do cabeçalho (`sa_cupom_desconto.en_cupom_classificacao`, via
 `Grupos` (individual ou do pedido) classifica a inscrição como GRUPOS. As
 demais classificações são só informativas. Magento aceita prefixo GR e etiqueta de
 regras; categoria numérica não é tratada como texto. Cortesia usa categoria,
-etiqueta ou bruto zero somente na ausência de sinal de grupos.
+etiqueta ou bruto zero somente na ausência de sinal de grupos. No Magento a
+categoria é o nome do bundle vendido (decisão de 04/11/2026): nome com `cortesia`
+ou `patrocinador` é CORTESIA, mesmo com valor pago. Conferido contra a planilha
+do sistema do Night Run Fortaleza 2026: 2.417 de 2.417 linhas.
 
 Combos são vendidos no Ativo e parte deles foi migrada para o Magento, com
 protocolo `<id_pedido Ativo>-<n>` e um bundle `<EVENTO>COMBO<n>` por prova.
@@ -165,6 +168,17 @@ origem: `STATUS_CONTRADITORIO`, `STATUS_ESPECIAL`, `CANCELAMENTO_PARCIAL`,
 `REEMBOLSO`, `QTD_BUNDLE`, `DESCONTO_CABECALHO`, `DESCONTO_INVALIDO`,
 `CUPOM_HEADER_AUSENTE`, `EVENTO_SEM_MAPA`, `ORFAO_PEDIDO`, `COMBO_COMPOSICAO`
 e `DATA_INVALIDA`.
+
+## Eventos abertos e inscrições removidas (04/11/2026)
+
+A reconciliação por janela olha só `dt_pedido` dos últimos 30 dias. Por isso, uma
+vez por dia a automação também relê pedidos e inscrições de eventos com data a
+partir de 30 dias atrás (`src/pipeline/ativo_eventos_abertos.py`), gravando e
+levando à CORE só o que mudou. Inscrição que não está mais na origem, confirmada
+pela PK, entra em `core.inscricao_removida_origem`: a linha continua na RAW e na
+fato, mas fica com `motivo_elegibilidade='REMOVIDA_NA_ORIGEM'` e não conta. Se
+voltar à origem, a marca sai. Pedido antigo de evento encerrado há mais de 30 dias
+continua fora da releitura diária: só uma releitura completa o alcança.
 
 ## Reprocessamento e segurança
 
