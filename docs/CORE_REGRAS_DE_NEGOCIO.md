@@ -25,7 +25,8 @@ indicadores `core.fato_inscricao_indicadores_validos` permanece `WHERE FALSE`.
   reúne comprador e participante, inclusive entre Magento e Ativo, numa única
   `pessoa_key`. CPF ausente ou inválido gera uma pessoa por ID de origem
   (`SOURCE_ID`). Nunca há junção por nome ou e-mail. Conflito de CPF ou fusão
-  de duas `pessoa_key` interrompe a carga para revisão. CPF, nome e e-mail
+  de duas `pessoa_key` não é resolvido sozinho: só esse registro fica de fora, no
+  log, e os demais seguem (`docs/CORE_DIM_PESSOA_CONTATO.md`). CPF, nome e e-mail
   ficam só na dimensão, com preenchimento atrás do gate
   `CORE_PII_ENABLE_SYNC`. Detalhes em `docs/CORE_DIM_PESSOA_CONTATO.md`.
 
@@ -180,7 +181,9 @@ repetido em cidades diferentes; sem ela, o SKU sai no log como `revisar`.
 Inscrição processada antes de chegar o cadastro é religada no mesmo passo diário
 (`relink_missing`). A que não dá para ligar, ou tem CPF inválido, aparece em
 `core.inscricao_fora_kpi_pessoas` com `flag_fora_kpi_pessoas` e `motivo`. Ela
-continua em inscritos e faturamento, mas não nos KPIs de pessoas.
+continua em inscritos e faturamento, mas não nos KPIs de pessoas, que só contam
+`criterio_identificacao='CPF_VALIDO'`. CPF inválido fica apenas sinalizado, sem
+investigação nem limpeza.
 
 ## Eventos abertos e inscrições removidas (04/11/2026)
 
@@ -192,6 +195,14 @@ pela PK, entra em `core.inscricao_removida_origem`: a linha continua na RAW e na
 fato, mas fica com `motivo_elegibilidade='REMOVIDA_NA_ORIGEM'` e não conta. Se
 voltar à origem, a marca sai. Pedido antigo de evento encerrado há mais de 30 dias
 continua fora da releitura diária: só uma releitura completa o alcança.
+
+Por isso, uma vez por mês civil, a partir de 12/2026, o ciclo faz também a releitura
+completa de `sa_pedido` e `sa_pedido_evento`
+(`src/pipeline/ativo_releitura_completa.py`, cerca de 20 minutos). Grava só o que
+mudou e aplica a mesma marca de removida, com o limite de 5.000 novas por releitura.
+Se o túnel cair, o cursor em `ativo_releitura.json` faz o ciclo seguinte continuar de
+onde parou. O que mudou vai para um diário próprio (`ativo_releitura.sqlite`), porque
+uma leitura completa espalha IDs além do limite de faixas do ciclo horário.
 
 ## Reprocessamento e segurança
 

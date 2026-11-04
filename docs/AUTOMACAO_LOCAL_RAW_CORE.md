@@ -1,4 +1,48 @@
-# Automação local RAW → STAGING → CORE
+# Automação RAW → STAGING → CORE
+
+Desde 28/10/2026 o ciclo roda no servidor, pelo `bcd-raw-core.timer`
+(`docs/DEPLOY_SERVIDOR_SEM_DOCKER.md`), e não mais pela tarefa Windows. O notebook
+só mantém o túnel do MySQL Ativo. As etapas atuais estão na seção seguinte; o
+restante deste documento descreve o executor local e os comandos, que são os mesmos.
+
+## Etapas de um ciclo (04/11/2026)
+
+O ciclo roda de hora em hora (`local_raw_core run-once`), nesta ordem:
+
+| # | Etapa | Frequência | Observação |
+|---|---|---|---|
+| 1 | Cadastros auxiliares | 24 horas | Eventos, usuários, cupons e demais cadastros RAW |
+| 2 | Incremental de pedidos e inscrições | Todo ciclo | Ativo e Magento, por watermark |
+| 3 | Reconciliação por janela do Ativo | 15 dias | Só `dt_pedido` dos últimos 30 dias |
+| 4 | Releitura de eventos abertos do Ativo | 24 horas | Eventos com data a partir de 30 dias atrás |
+| 5 | Releitura completa do Ativo | 1 vez por mês civil, desde 12/2026 | Cerca de 20 minutos; continua de onde parou |
+| 6 | CORE dos IDs alterados | Todo ciclo | Pelo diário `pending.sqlite` |
+| 7 | Passo diário da CORE | Junto com a etapa 1 | Eventos por SKU, datas de `dim_evento` e religamento de pessoas |
+| 8 | CORE da releitura completa | Quando há pendência | Pelo diário próprio `ativo_releitura.sqlite` |
+
+As regras de negócio dessas etapas estão em `docs/CORE_REGRAS_DE_NEGOCIO.md`.
+
+Se o Ativo estiver indisponível, as etapas 3 a 5 ficam para o próximo ciclo e o
+restante continua. O resultado do ciclo aparece em `journalctl -u bcd-raw-core`:
+
+| Linha | Significado |
+|---|---|
+| `AUTOMATION_CYCLE_OK` | Todas as etapas concluíram |
+| `AUTOMATION_CYCLE_PARTIAL failed=...` | Alguma etapa falhou; o processo termina com código 2 |
+| `failed=ativo` | Origem Ativo ou releitura falhou, em geral por túnel fora do ar |
+| `failed=core_diario` | Falha no passo diário da CORE |
+| `failed=core_releitura` | Falha ao levar a releitura completa à CORE; o diário é mantido e repetido |
+| `EVENT_SYNC unificados=... revisar=...` | Eventos unidos por SKU e SKUs que pedem curadoria |
+| `EVENT_SYNC_ADIADO` | Mais de 50.000 inscrições afetadas no dia: a execução foi desfeita |
+| `CORE_PERSON_RELINK {...}` | Inscrições religadas por origem e quantas ficaram para revisão |
+| `CORE_PERSON_REVISAR_IDENTIDADE` | Pedido ou inscrição em conflito de identidade, só com o ID |
+| `CORE_RELEITURA_COMPLETA` | Releitura completa aplicada à CORE |
+
+Limites: o ciclo recusa mais de 50 faixas de pedidos ou 100 lotes de inscrições,
+e o diário fica preservado até a revisão. A releitura completa tem limite próprio,
+de 2.000 faixas e 1.000 lotes.
+
+## Ciclo e escopo do executor local
 
 Esta implantação roda no computador Windows do responsável pelo projeto, não em
 container nem no Naruto. O túnel SSH dedicado entrega a conexão PostgreSQL ao
@@ -22,17 +66,20 @@ MySQL Ativo e Magento são lidos diretamente pelo Python existente.
   Magento mantém a sobreposição de cinco minutos.
 - A cada 15 dias desde a última reconciliação bem-sucedida de cada entidade
   Ativo, executa separadamente a janela de 30 dias. Mudanças em pedidos
-  históricos fora dessa janela não são garantidamente detectadas.
+  históricos fora dessa janela chegam pela releitura de eventos abertos, em até
+  24 horas, ou pela releitura completa, em até um mês.
 - As views STAGING refletem a RAW sem etapa de carga. Após as transações RAW, o
   diário SQLite local fornece os IDs alterados à CORE. São atualizados apenas
   `core.fato_pedido` e `core.fato_inscricao`, por faixas limitadas e pelos IDs
   efetivamente afetados. Mudanças em pedidos também reprocessam inscrições
-  relacionadas. Dimensões auxiliares de eventos/combos e regras externas não
-  fazem parte deste agendamento; alterações nelas requerem rotina própria.
+  relacionadas. Desde 04/11/2026, `dim_evento` é mantida pelo passo diário
+  (`src/core/event_sync.py`). Combos e regras externas não fazem parte deste
+  agendamento; alterações neles requerem rotina própria.
 - A view `core.fato_inscricao_indicadores_validos` deve continuar fechada. A
   automação recusa rodar se o gate abrir e verifica que seu resultado é vazio.
 
-Não existe rota FULL nem migração automática nesta tarefa. Uma falha mantém os
+Não existe rota que regrave tudo nem migração automática nesta tarefa: a releitura
+completa grava só as linhas que mudaram. Uma falha mantém os
 IDs no diário para reprocessamento; nunca se deve apagar o diário para
 "resolver" um erro. O último resultado também aparece em
 `%LOCALAPPDATA%\BancoCentralDados\automation-windows.log`, sem senhas nem
