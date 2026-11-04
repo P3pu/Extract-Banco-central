@@ -73,7 +73,10 @@ do cabeçalho (`sa_cupom_desconto.en_cupom_classificacao`, via
 `Grupos` (individual ou do pedido) classifica a inscrição como GRUPOS. As
 demais classificações são só informativas. Magento aceita prefixo GR e etiqueta de
 regras; categoria numérica não é tratada como texto. Cortesia usa categoria,
-etiqueta ou bruto zero somente na ausência de sinal de grupos.
+etiqueta ou bruto zero somente na ausência de sinal de grupos. No Magento a
+categoria é o nome do bundle vendido (decisão de 04/11/2026): nome com `cortesia`
+ou `patrocinador` é CORTESIA, mesmo com valor pago. Conferido contra a planilha
+do sistema do Night Run Fortaleza 2026: 2.417 de 2.417 linhas.
 
 Combos são vendidos no Ativo e parte deles foi migrada para o Magento, com
 protocolo `<id_pedido Ativo>-<n>` e um bundle `<EVENTO>COMBO<n>` por prova.

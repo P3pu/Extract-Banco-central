@@ -33,6 +33,8 @@ WITH filhos AS (
            filhos.bruto bruto_filhos,
            COALESCE(regras.grupos,false) etiqueta_grupos,
            COALESCE(regras.cortesia,false) etiqueta_cortesia,
+           -- O nome do bundle vendido é a categoria (decisão 04/11/2026): Kit Patrocinador etc.
+           (COALESCE(pai.nome_item,'') ~* 'cortesia|patrocinador') categoria_cortesia,
            p.desconto desconto_cabecalho,
            p.subtotal subtotal_cabecalho,
            p.valor_total total_cabecalho,
@@ -64,7 +66,7 @@ WITH filhos AS (
              OR COALESCE(quantidade_cancelada,0)>0
              OR COALESCE(quantidade_reembolsada,0)>0) qtd_ambigua,
            (COALESCE(cupom,'') ~* '^GR' OR etiqueta_grupos) sinal_grupos,
-           (etiqueta_cortesia OR valor_bruto=0) sinal_cortesia
+           (etiqueta_cortesia OR categoria_cortesia OR valor_bruto=0) sinal_cortesia
     FROM base b
 ), conciliacao AS (
     -- Comparação considera todos os bundles do pedido, não só o lote atual.
@@ -102,7 +104,7 @@ WITH filhos AS (
                    c.estado_pedido,c.status_pedido,c.quantidade_pedida,
                    c.quantidade_cancelada,c.quantidade_reembolsada,
                    c.valor_linha,c.desconto_filhos,c.bruto_filhos,
-                   c.etiqueta_grupos,c.etiqueta_cortesia,
+                   c.etiqueta_grupos,c.etiqueta_cortesia,c.categoria_cortesia,
                    c.desconto_cabecalho,c.subtotal_cabecalho,
                    c.total_cabecalho,co.desconto_itens,co.bruto_itens,
                    co.componentes_presentes,c.flag_evento_teste,
@@ -155,12 +157,14 @@ UPDATE core.fato_inscricao f SET
     classificacao_incompleta=false,
     motivo_classificacao=CASE WHEN d.sinal_grupos THEN 'CUPOM_OU_ETIQUETA_GRUPOS'
         WHEN d.etiqueta_cortesia THEN 'ETIQUETA_CORTESIA'
+        WHEN d.categoria_cortesia THEN 'CATEGORIA_CORTESIA'
         WHEN d.sinal_cortesia THEN 'BRUTO_ZERO' ELSE 'SEM_SINAL_ESPECIAL' END,
     regras_classificacao=jsonb_build_object(
         'cupom_gr',COALESCE(d.cupom ~* '^GR',false),
         'etiqueta_grupos',d.etiqueta_grupos,
         'etiqueta_cortesia',d.etiqueta_cortesia,
-        'categoria_textual_disponivel',false),
+        'categoria_cortesia',d.categoria_cortesia,
+        'categoria_textual_disponivel',true),
     cupom_codigo_origem=d.cupom,
     desconto_filhos_magento=d.desconto_filhos,
     desconto_pai_magento=d.desconto_item,
