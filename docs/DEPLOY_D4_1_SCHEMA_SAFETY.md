@@ -1,5 +1,7 @@
 # D4.1 — segurança do schema RAW nas cargas
 
+> **Documento histórico.** Registra a etapa de segurança do schema RAW, cujo código continua em uso e não descreve a operação atual. Veja o [índice](README.md).
+
 Estado: **código e testes locais para revisão; nenhuma alteração no Naruto**. Base: D4, commit `3d73020`. A CORE, STAGING, dados RAW e serviços existentes não foram tocados.
 
 ## Separação de DDL e carga

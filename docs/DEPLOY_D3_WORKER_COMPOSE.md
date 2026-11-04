@@ -1,5 +1,7 @@
 # D3 — executor RAW via Docker Compose local no worker
 
+> **Documento histórico.** Registra a proposta com Docker Compose, substituída pelo executor sem Docker e não descreve a operação atual. Veja o [índice](README.md).
+
 Status: **preparado para revisão, não implantado**. Esta decisão substitui a proposta de Docker Stack/manager. O diagnóstico D2 identificou Docker Engine/Compose e systemd no worker, mas não comprovou um endpoint PostgreSQL utilizável a partir de um container bridge nem a conectividade TLS com as duas origens MySQL. Nenhuma carga ou criação de container no Naruto faz parte desta etapa.
 
 ## Arquitetura e limites

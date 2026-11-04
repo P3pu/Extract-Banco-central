@@ -1,5 +1,7 @@
 # CORE — Fase C2.1: diagnóstico histórico read-only
 
+> **Documento histórico.** Registra o plano de reconciliação histórica e não descreve a operação atual. Veja o [índice](README.md).
+
 **Estado em 2026-10-20:** preparação versionada; **nenhuma consulta desta fase
 foi executada no Naruto**. A C1.5 local passou segundo o relato do usuário,
 mas isso não comprova reconciliação histórica real. A CORE ainda não existe no

@@ -1,5 +1,7 @@
 # RAW R1 — laboratório local isolado (preparado, não executado)
 
+> **Documento histórico.** Registra um laboratório local de uma proposta de índice não aplicada e não descreve a operação atual. Veja o [índice](../../docs/README.md).
+
 Este laboratório comprova compatibilidade funcional do índice em PostgreSQL
 16.13. Poucas linhas sintéticas **não** comprovam ganho real de desempenho nem
 substituem o plano/monitoramento do servidor Naruto. Nenhuma etapa SQL deste

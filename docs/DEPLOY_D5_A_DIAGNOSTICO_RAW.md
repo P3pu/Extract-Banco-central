@@ -1,5 +1,7 @@
 # D5-A — diagnóstico RAW do Naruto
 
+> **Documento histórico.** Registra o diagnóstico RAW do Naruto, em uma implantação substituída pelo executor sem Docker e não descreve a operação atual. Veja o [índice](README.md).
+
 **Estado em 21/10/2026: NÃO APTO para avançar à preparação do executor ocioso.** O diagnóstico real não foi executado: nesta sessão não havia conexão PostgreSQL autorizada e autenticada nem conta somente leitura disponível. Não reutilizei senhas compartilhadas em conversas, não li segredos de containers/arquivos protegidos e não acessei o Naruto. Portanto, os resultados abaixo são **expectativas do código**, não observações do banco. Nenhuma carga, DDL, implantação ou consulta a dados de negócio foi realizada.
 
 Base examinada: branch `codex/deploy-d4-1-schema-safety`, commit `b34a3e47d22b9ed65578154344a135d392918c73`. O roteiro manual está em `sql/postgres/diagnostics/d5_a_catalog_readonly.sql` e `sql/postgres/diagnostics/d5_a_etl_controls_readonly.sql`. Ambos delimitam transações `READ ONLY`, `statement_timeout = 5s` e `lock_timeout = 500ms` e só consultam catálogo, estatísticas e controles técnicos. No pgAdmin, executar **primeiro apenas o bloco de preflight** do catálogo; prosseguir somente se `database_conectado = Atendimento`, `destino_ok = true` e `leitura_ok = true`. Parar em qualquer erro ou timeout.

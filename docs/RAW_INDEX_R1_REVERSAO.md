@@ -1,5 +1,7 @@
 # RAW R1 — plano de reversão separado (não autorizado)
 
+> **Documento histórico.** Registra a reversão de um índice que não estava aplicado em 04/11/2026 e não descreve a operação atual. Veja o [índice](README.md).
+
 Nenhum `DROP INDEX` é executado pelos scripts R1. Reversão no Naruto exige
 decisão e autorização próprias, mesmo se a criação concorrente falhar.
 

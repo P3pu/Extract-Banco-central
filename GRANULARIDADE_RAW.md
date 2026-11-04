@@ -1,5 +1,7 @@
 # Granularidade e chave primária das tabelas RAW
 
+Comandos e funcionamento de cada tabela estão em [RAW por entidade](docs/RAW_ENTIDADES.md).
+
 A granularidade indica o que **uma linha** representa. A PK é a chave física
 utilizada pela RAW para identificar e atualizar essa linha; não significa que
 outras combinações de colunas sejam únicas. `_source`, `_extracted_at` e

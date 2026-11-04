@@ -1,5 +1,7 @@
 # Homologação local CORE — Fase C1.5 (cobertura para revisão)
 
+> **Documento histórico.** Registra um laboratório local de fase anterior e não descreve a operação atual. Veja o [índice](../../docs/README.md).
+
 **Estado:** o usuário informou que a C1 anterior terminou com
 `C1_LOCAL_TESTS_PASSED` em PostgreSQL 16.13 local; esta revisão C1.5 **não foi
 executada**. Não executar os comandos abaixo antes de autorização específica

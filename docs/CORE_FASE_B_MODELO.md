@@ -1,5 +1,7 @@
 # CORE — Fase B: proposta física para aprovação
 
+> **Documento histórico.** Registra a proposta física da CORE e não descreve a operação atual. Veja o [índice](README.md).
+
 Status: **proposta não implantada** (2026-10-19). Nenhum SQL deste diretório foi
 executado. Fonte de verdade desta revisão: `CORE_VALIDACAO_TECNICA.md`, consultas
 da Fase A, views versionadas, prompt CORE v1 e dicionário CORE v1 (abas `Campos

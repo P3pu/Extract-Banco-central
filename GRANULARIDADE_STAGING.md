@@ -1,5 +1,7 @@
 # Granularidade e chaves das views STAGING
 
+As views e a implantação estão em [STAGING.md](docs/STAGING.md).
+
 O schema `staging` contém **views**, não tabelas físicas. Portanto, nenhuma
 view possui uma **PRIMARY KEY (PK) declarada ou imposta pelo PostgreSQL**. A
 coluna “chave lógica” abaixo identifica o grão esperado e deve ser única nos
