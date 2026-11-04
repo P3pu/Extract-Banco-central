@@ -2,6 +2,7 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, Mock
 
+import pytest
 from psycopg import Rollback
 
 from src.automation import local_raw_core
@@ -87,11 +88,49 @@ def test_relink_syncs_each_origin_in_chunks(monkeypatch):
     conn = MagicMock()
     conn.execute.side_effect = [Mock(fetchall=lambda: [(1,), (2,), (3,)]), Mock(fetchall=lambda: [(9,)])]
     calls = []
-    monkeypatch.setattr(person_dimension, "sync_changed",
-                        lambda _c, orders, inscriptions: calls.append(inscriptions))
+    def fake(_c, _orders, inscriptions):
+        calls.append(inscriptions)
+        return {"contacts": 1, "installed": True, "enabled": True}
+    monkeypatch.setattr(person_dimension, "sync_changed", fake)
     result = person_dimension.relink_missing(conn, date(2026, 1, 1), maximum=10, chunk=2)
     assert calls == [{"magento": {1, 2}}, {"magento": {3}}, {"ativo": {9}}]
-    assert result == {"magento": 3, "ativo": 1}
+    assert result == {"magento": 3, "ativo": 1, "revisar": 0}
+
+
+def _conn_that_propagates():
+    conn = MagicMock()
+    conn.transaction.return_value.__exit__.return_value = False
+    return conn
+
+
+def test_identity_conflict_is_isolated_and_the_rest_is_synced(monkeypatch, capsys):
+    synced = []
+
+    def fake(_c, _orders, inscriptions):
+        ids = inscriptions.get("magento", set())
+        if 3 in ids:
+            raise person_dimension.IdentityConflict("x")
+        synced.extend(ids)
+        return {"contacts": len(ids), "installed": True, "enabled": True}
+    monkeypatch.setattr(person_dimension, "sync_changed", fake)
+    result = person_dimension.sync_isolating(_conn_that_propagates(), {}, {"magento": {1, 2, 3, 4, 5}})
+    assert sorted(synced) == [1, 2, 4, 5] and result["revisar"] == 1 and result["contacts"] == 4
+    assert "CORE_PERSON_REVISAR_IDENTIDADE inscriptions magento 3" in capsys.readouterr().out
+
+
+def test_too_many_conflicts_stop_instead_of_being_skipped(monkeypatch):
+    monkeypatch.setattr(person_dimension, "MAX_IDENTITY_REVIEW", 2)
+    monkeypatch.setattr(person_dimension, "sync_changed",
+                        Mock(side_effect=person_dimension.IdentityConflict("x")))
+    with pytest.raises(RuntimeError, match="demais"):
+        person_dimension.sync_isolating(_conn_that_propagates(), {}, {"magento": {1, 2, 3, 4}})
+
+
+def test_other_failures_are_not_treated_as_identity_conflicts(monkeypatch):
+    monkeypatch.setattr(person_dimension, "sync_changed",
+                        Mock(side_effect=RuntimeError("Token de CPF existente divergente")))
+    with pytest.raises(RuntimeError, match="Token"):
+        person_dimension.sync_isolating(_conn_that_propagates(), {}, {"magento": {1, 2}})
 
 
 def test_daily_step_failure_does_not_stop_the_cycle(monkeypatch):

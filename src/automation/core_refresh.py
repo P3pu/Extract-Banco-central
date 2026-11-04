@@ -5,7 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from src.core import combo_attribution, runner
-from src.core.person_dimension import sync_changed
+from src.core.person_dimension import sync_isolating
 
 
 SPAN = 100_000
@@ -108,8 +108,7 @@ def refresh(conn, pending, assert_control=lambda: None):
         runner.run_range(conn, "inscriptions", low, high, as_of, cached=cached,
                          selected_ids=selected)
     assert_control()
-    with conn.transaction():
-        contacts = sync_changed(conn, orders, inscriptions)
+    contacts = sync_isolating(conn, orders, inscriptions)
     print("CORE_PERSON_CONTACTS "
           f"installed={int(contacts['installed'])} "
           f"enabled={int(contacts['enabled'])} count={contacts['contacts']}",
