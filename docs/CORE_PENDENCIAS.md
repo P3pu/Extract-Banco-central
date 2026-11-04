@@ -57,6 +57,7 @@
 16. `/dev/shm` do PostgreSQL com 64 MB: consultas manuais grandes precisam de
     `SET max_parallel_workers_per_gather=0`.
 17. API somente leitura para o painel, sem decisão. O painel é atualizado a pedido.
+18. KPIs de Sales Growth: metas e definições a fechar ([KPIS_SALES_GROWTH.md](KPIS_SALES_GROWTH.md)).
 
 ## Decidido em 04/11/2026
 
